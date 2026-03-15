@@ -291,6 +291,7 @@ function renderRecommendation() {
   addBtn.textContent = 'Already Seen';
   addBtn.addEventListener('click', () => {
     movies.unshift({ title: rec.title, year: rec.year, director: rec.director, poster: rec.poster });
+    saveMovies();
     render(movies);
     recIndex = (recPool.indexOf(rec) + 1) % recPool.length;
     renderRecommendation();
@@ -322,8 +323,36 @@ function renderRecommendation() {
   wrap.appendChild(content);
 }
 
-renderRecommendation();
+// Persistence
+const STORAGE_KEY = 'braintrust_movies';
 
+function saveMovies() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(movies));
+}
+
+function loadMovies() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return;
+  try {
+    const parsed = JSON.parse(saved);
+    movies.splice(0, movies.length, ...parsed);
+  } catch (e) {}
+}
+
+function syncOrderFromDOM() {
+  const cards = grid.querySelectorAll('.movie-card');
+  const newOrder = [];
+  cards.forEach(card => {
+    const title = card.querySelector('.card-name').textContent;
+    const movie = movies.find(m => m.title === title);
+    if (movie) newOrder.push(movie);
+  });
+  movies.splice(0, movies.length, ...newOrder);
+  saveMovies();
+}
+
+loadMovies();
+renderRecommendation();
 render(movies);
 
 Sortable.create(grid, {
@@ -331,6 +360,7 @@ Sortable.create(grid, {
   easing: 'cubic-bezier(0.23, 1, 0.32, 1)',
   swapThreshold: 0.3,
   ghostClass: 'sortable-ghost',
+  onEnd: syncOrderFromDOM,
 });
 
 // Controls
