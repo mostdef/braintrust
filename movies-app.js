@@ -223,21 +223,25 @@ function renderRecommendation() {
 
   const rec = getCurrentRec();
 
-  const heading = document.createElement('div');
-  heading.className = 'rec-heading';
-  heading.textContent = 'Something New To Watch Today?!';
-
   if (!rec) {
     const empty = document.createElement('p');
     empty.className = 'rec-empty';
     empty.textContent = 'All recommendations have been added to your list.';
-    wrap.appendChild(heading);
     wrap.appendChild(empty);
     return;
   }
 
-  const card = document.createElement('div');
-  card.className = 'rec-card';
+  // Blurred background
+  const bg = document.createElement('div');
+  bg.className = 'rec-bg';
+  bg.style.backgroundImage = `url(${rec.poster})`;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'rec-overlay';
+
+  // Content row
+  const content = document.createElement('div');
+  content.className = 'rec-content';
 
   const textures = generateFoldTextures();
   const posterWrap = document.createElement('div');
@@ -262,6 +266,10 @@ function renderRecommendation() {
 
   const info = document.createElement('div');
   info.className = 'rec-info';
+
+  const heading = document.createElement('div');
+  heading.className = 'rec-heading';
+  heading.textContent = 'Something New To Watch Today?!';
 
   const title = document.createElement('span');
   title.className = 'rec-title';
@@ -291,7 +299,7 @@ function renderRecommendation() {
 
   const newBtn = document.createElement('button');
   newBtn.className = 'rec-btn rec-btn-secondary';
-  newBtn.textContent = 'Recommend new';
+  newBtn.textContent = 'One more try';
   newBtn.addEventListener('click', () => {
     recIndex = (recPool.indexOf(rec) + 1) % recPool.length;
     renderRecommendation();
@@ -300,16 +308,18 @@ function renderRecommendation() {
   buttons.appendChild(addBtn);
   buttons.appendChild(newBtn);
 
+  info.appendChild(heading);
   info.appendChild(title);
   info.appendChild(meta);
   info.appendChild(reason);
   info.appendChild(buttons);
 
-  card.appendChild(posterWrap);
-  card.appendChild(info);
+  content.appendChild(posterWrap);
+  content.appendChild(info);
 
-  wrap.appendChild(heading);
-  wrap.appendChild(card);
+  wrap.appendChild(bg);
+  wrap.appendChild(overlay);
+  wrap.appendChild(content);
 }
 
 renderRecommendation();
