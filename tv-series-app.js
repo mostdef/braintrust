@@ -1,3 +1,5 @@
+const PERSONA_ENABLED = true; // set to false to disable persona (saves API credits)
+
 const VIEWS = ['collection','watchlist','maybe','meh','banned'];
 const dirtyViews = new Set(VIEWS);
 function getGrid(v) { return document.getElementById('grid-' + v); }
@@ -315,8 +317,14 @@ function renderPersonaCard(wrap, data) {
   desc.className = 'persona-description';
   desc.textContent = data.description;
 
+  const btnRefresh = document.createElement('button');
+  btnRefresh.className = 'persona-refresh-btn';
+  btnRefresh.title = 'Regenerate persona';
+  btnRefresh.textContent = '↺';
+  btnRefresh.addEventListener('click', () => renderPersonaSection(true));
+
   overlay.append(label, type, tagline, desc);
-  imgWrap.append(img, overlay);
+  imgWrap.append(img, overlay, btnRefresh);
   card.appendChild(imgWrap);
   wrap.appendChild(card);
 
@@ -324,7 +332,8 @@ function renderPersonaCard(wrap, data) {
   img.onload = () => img.classList.add('loaded');
 }
 
-function renderPersonaSection() {
+function renderPersonaSection(force = false) {
+  if (!PERSONA_ENABLED) return;
   const wrap = document.getElementById('persona-wrap');
   if (!wrap) return;
 
@@ -333,7 +342,16 @@ function renderPersonaSection() {
 
   const cacheKey = getPersonaCacheKey(standards);
   const cache = loadPersonaCache();
-  if (cache && cache.key === cacheKey) { renderPersonaCard(wrap, cache.data); return; }
+
+  if (!force) {
+    if (cache && cache.key === cacheKey) { renderPersonaCard(wrap, cache.data); return; }
+    wrap.innerHTML = `
+      <div class="persona-card persona-prompt">
+        <button class="persona-generate-btn" id="persona-generate-btn">Generate TV Persona</button>
+      </div>`;
+    document.getElementById('persona-generate-btn').addEventListener('click', () => renderPersonaSection(true));
+    return;
+  }
 
   wrap.innerHTML = `
     <div class="persona-card persona-loading">

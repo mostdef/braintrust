@@ -26,6 +26,34 @@
     <h2 class="settings-title">Settings</h2>
 
     <section class="settings-section">
+      <h3 class="settings-section-title">Cost Tracking</h3>
+      <p class="settings-section-desc">Track your Anthropic API spending across recommendation searches.</p>
+
+      <div class="cost-tracking-grid">
+        <div class="cost-stat-card" id="cost-stat-tracked">
+          <div class="cost-stat-label">Total tracked</div>
+          <div class="cost-stat-value" id="cost-total-tracked">—</div>
+          <div class="cost-stat-sub">accumulated across all sessions</div>
+        </div>
+        <div class="cost-stat-card" id="cost-stat-remaining">
+          <div class="cost-stat-label">Remaining balance</div>
+          <div class="cost-stat-value" id="cost-remaining-value">—</div>
+          <div class="cost-stat-sub">starting balance minus total tracked</div>
+        </div>
+      </div>
+
+      <div class="cost-balance-row">
+        <label class="settings-label" for="starting-balance-input">Starting / current balance ($)</label>
+        <div class="cost-balance-input-row">
+          <input type="number" id="starting-balance-input" class="cost-balance-input" min="0" step="0.01" placeholder="e.g. 16.20" />
+          <button class="snap-restore-btn" id="save-balance-btn">Save</button>
+          <button class="cost-balance-clear-btn" id="clear-balance-btn">Clear</button>
+        </div>
+        <p class="settings-section-desc" style="margin-top:8px">Enter the balance shown on your <a href="https://console.anthropic.com/settings/billing" target="_blank" class="settings-link">Anthropic billing page</a>. The app will subtract all tracked spending from this number.</p>
+      </div>
+    </section>
+
+    <section class="settings-section">
       <h3 class="settings-section-title">Snapshots</h3>
       <p class="settings-section-desc">Snapshots capture all your lists at a point in time. Upload a snapshot file to restore your data.</p>
 

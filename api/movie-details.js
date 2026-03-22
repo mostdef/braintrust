@@ -28,30 +28,94 @@ module.exports = async function handler(req, res) {
   const details = await detailsRes.json();
   const credits = await creditsRes.json();
 
-  // Top cast (up to 8)
-  const cast = (credits.cast || []).slice(0, 8).map(p => ({
+  // Fetch OMDB ratings
+  let imdbRating = null, rtScore = null;
+  const imdbId = details.imdb_id;
+  if (imdbId && process.env.OMDB_KEY) {
+    try {
+      const omdbRes = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${process.env.OMDB_KEY}`);
+      const omdb = await omdbRes.json();
+      if (omdb.Response === 'True') {
+        imdbRating = omdb.imdbRating !== 'N/A' ? omdb.imdbRating : null;
+        const rt = omdb.Ratings?.find(r => r.Source === 'Rotten Tomatoes');
+        rtScore = rt ? rt.Value : null;
+      }
+    } catch {}
+  }
+
+  // Top cast (up to 8) + key crew people IDs
+  const crew = credits.crew || [];
+  const pick = (jobs) => crew.find(p => jobs.includes(p.job)) || null;
+  const keyCrewPeople = [
+    { role: 'Cinematography', person: pick(['Director of Photography', 'Cinematography']) },
+    { role: 'Original Music', person: pick(['Original Music Composer', 'Music', 'Composer']) },
+    { role: 'Screenplay',     person: pick(['Screenplay', 'Story', 'Writer']) },
+    { role: 'Editor',         person: pick(['Editor', 'Film Editor']) },
+    { role: 'Producer',       person: pick(['Producer']) },
+  ].filter(c => c.person);
+
+  const topCast = (credits.cast || []).slice(0, 8);
+
+  // Fetch Wikidata IDs for all people in parallel
+  const fetchWikidataId = async (personId) => {
+    try {
+      const r = await fetch(`${TMDB_BASE}/person/${personId}/external_ids`, { headers });
+      const d = await r.json();
+      return d.wikidata_id || null;
+    } catch { return null; }
+  };
+
+  const allPeople = [
+    ...topCast.map(p => p.id),
+    ...keyCrewPeople.map(c => c.person.id),
+  ];
+  const wikidataIds = await Promise.all(allPeople.map(fetchWikidataId));
+
+  // One batch call to Wikidata to resolve Qxxx → English Wikipedia article title
+  const validIds = wikidataIds.filter(Boolean);
+  let wikidataToWikiTitle = {};
+  if (validIds.length) {
+    try {
+      const wdRes = await fetch(
+        `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${validIds.join('|')}&props=sitelinks&sitefilter=enwiki&format=json`
+      );
+      const wdData = await wdRes.json();
+      for (const [qid, entity] of Object.entries(wdData.entities || {})) {
+        const title = entity.sitelinks?.enwiki?.title;
+        if (title) wikidataToWikiTitle[qid] = title;
+      }
+    } catch {}
+  }
+
+  const wikiUrl = (wikidataId, name) => {
+    const title = wikidataId && wikidataToWikiTitle[wikidataId];
+    return title
+      ? `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`
+      : `https://en.wikipedia.org/wiki/${encodeURIComponent(name.replace(/ /g, '_'))}`;
+  };
+
+  const cast = topCast.map((p, i) => ({
     name:       p.name,
     character:  p.character,
     photo:      p.profile_path ? `${TMDB_IMG}w185${p.profile_path}` : null,
+    wiki:       wikiUrl(wikidataIds[i], p.name),
   }));
 
-  // Key crew
-  const crew = credits.crew || [];
-  const pick = (jobs) => crew.find(p => jobs.includes(p.job))?.name || null;
-  const keyCrew = [
-    { role: 'Cinematography', name: pick(['Director of Photography', 'Cinematography']) },
-    { role: 'Original Music', name: pick(['Original Music Composer', 'Music', 'Composer']) },
-    { role: 'Screenplay',     name: pick(['Screenplay', 'Story', 'Writer']) },
-    { role: 'Editor',         name: pick(['Editor', 'Film Editor']) },
-    { role: 'Producer',       name: pick(['Producer']) },
-  ].filter(c => c.name);
+  const keyCrew = keyCrewPeople.map(({ role, person }, i) => ({
+    role,
+    name: person.name,
+    wiki: wikiUrl(wikidataIds[topCast.length + i], person.name),
+  }));
 
   res.json({
-    overview:    details.overview || null,
-    tagline:     details.tagline  || null,
-    runtime:     details.runtime  || null,
-    genres:      (details.genres || []).map(g => g.name),
-    poster:      search.results[0].poster_path ? `${TMDB_IMG}w500${search.results[0].poster_path}` : null,
+    overview:     details.overview || null,
+    tagline:      details.tagline  || null,
+    runtime:      details.runtime  || null,
+    genres:       (details.genres || []).map(g => g.name),
+    poster:       search.results[0].poster_path ? `${TMDB_IMG}w500${search.results[0].poster_path}` : null,
+    imdb_id:      imdbId || null,
+    imdb_rating:  imdbRating,
+    rt_score:     rtScore,
     cast,
     keyCrew,
   });

@@ -41,11 +41,23 @@
     <input type="range" id="dark-slider" class="grain-slider" min="0" max="100" step="1" value="100" hidden>
     <span class="grain-value" id="dark-value" hidden>+100%</span>
   </div>
+  <div id="search-modal-backdrop" class="search-modal-backdrop" style="display:none">
+    <div class="search-modal">
+      <div class="search-modal-header">
+        <input type="text" id="search-input" class="search-input" placeholder="Search for a film…" autocomplete="off" spellcheck="false">
+        <button class="search-modal-close" id="search-modal-close">✕</button>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
   <div id="movie-modal-backdrop" class="movie-modal-backdrop" style="display:none">
+    <button class="mm-nav-btn" id="mm-nav-prev">&#8592;</button>
     <div class="movie-modal" id="movie-modal">
       <button class="movie-modal-close" id="movie-modal-close">✕</button>
+      <div class="mm-nav-counter" id="mm-nav-counter"></div>
       <div class="movie-modal-body" id="movie-modal-body"></div>
     </div>
+    <button class="mm-nav-btn" id="mm-nav-next">&#8594;</button>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
   <script src="movies-data.js"></script>

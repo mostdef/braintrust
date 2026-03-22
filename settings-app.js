@@ -1,7 +1,9 @@
-const STORAGE_KEY   = 'braintrust_movies';
-const WATCHLIST_KEY = 'braintrust_watchlist';
-const MAYBE_KEY     = 'braintrust_maybe';
-const BANNED_KEY    = 'braintrust_banned';
+const STORAGE_KEY        = 'braintrust_movies';
+const WATCHLIST_KEY      = 'braintrust_watchlist';
+const MAYBE_KEY          = 'braintrust_maybe';
+const BANNED_KEY         = 'braintrust_banned';
+const TOTAL_COST_KEY     = 'braintrust_total_cost';
+const STARTING_BAL_KEY   = 'braintrust_starting_balance';
 
 function applySnapshot(snap) {
   localStorage.setItem(STORAGE_KEY,   JSON.stringify(snap.movies    || []));
@@ -132,6 +134,39 @@ async function loadServerSnapshots() {
 }
 
 loadServerSnapshots();
+
+// ── Cost tracking ────────────────────────────────────────────────────────────
+
+function renderCostStats() {
+  const totalTracked = parseFloat(localStorage.getItem(TOTAL_COST_KEY) || '0') || 0;
+  const startingBal  = parseFloat(localStorage.getItem(STARTING_BAL_KEY) || '') || null;
+
+  document.getElementById('cost-total-tracked').textContent = `$${totalTracked.toFixed(4)}`;
+
+  if (startingBal !== null) {
+    const remaining = startingBal - totalTracked;
+    document.getElementById('cost-remaining-value').textContent = `$${remaining.toFixed(4)}`;
+    document.getElementById('starting-balance-input').value = startingBal.toFixed(2);
+  }
+}
+
+document.getElementById('save-balance-btn').addEventListener('click', () => {
+  const val = parseFloat(document.getElementById('starting-balance-input').value);
+  if (!isNaN(val) && val >= 0) {
+    localStorage.setItem(STARTING_BAL_KEY, val.toFixed(6));
+    renderCostStats();
+    document.getElementById('save-balance-btn').textContent = 'Saved ✓';
+    setTimeout(() => { document.getElementById('save-balance-btn').textContent = 'Save'; }, 1500);
+  }
+});
+
+document.getElementById('clear-balance-btn').addEventListener('click', () => {
+  localStorage.removeItem(STARTING_BAL_KEY);
+  document.getElementById('starting-balance-input').value = '';
+  document.getElementById('cost-remaining-value').textContent = '—';
+});
+
+renderCostStats();
 
 document.getElementById('save-snapshot-btn').addEventListener('click', async function () {
   this.textContent = 'Saving…';

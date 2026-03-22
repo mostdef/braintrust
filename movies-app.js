@@ -1,3 +1,8 @@
+const PERSONA_ENABLED = true; // set to false to disable persona & stats (saves API credits)
+const PERSONA_HIDDEN_KEY = 'braintrust_persona_hidden';
+function isPersonaHidden() { return localStorage.getItem(PERSONA_HIDDEN_KEY) === '1'; }
+function setPersonaHidden(v) { localStorage.setItem(PERSONA_HIDDEN_KEY, v ? '1' : '0'); }
+
 const VIEWS = ['collection','watchlist','maybe','meh','banned'];
 const dirtyViews = new Set(VIEWS);
 function getGrid(v) { return document.getElementById('grid-' + v); }
@@ -208,8 +213,17 @@ function renderStandardsSection() {
   const count = document.createElement('span');
   count.className = 'standards-count';
   count.textContent = `${standards.length} / ${MAX_STANDARDS}`;
+  const togglePersonaBtn = document.createElement('button');
+  togglePersonaBtn.className = 'persona-hide-btn';
+  togglePersonaBtn.textContent = isPersonaHidden() ? 'Show Persona' : 'Hide Persona';
+  togglePersonaBtn.addEventListener('click', () => {
+    setPersonaHidden(!isPersonaHidden());
+    renderStandardsSection();
+    renderPersonaSection();
+  });
   header.appendChild(title);
   header.appendChild(count);
+  if (PERSONA_ENABLED && standards.length > 0) header.appendChild(togglePersonaBtn);
   wrap.appendChild(header);
 
   const slots = document.createElement('div');
@@ -222,6 +236,7 @@ function renderStandardsSection() {
 
     if (movie) {
       slot.classList.add('filled');
+      slot.dataset.title = movie.title;
       const img = document.createElement('img');
       img.src = movie.poster;
       img.alt = movie.title;
@@ -248,6 +263,23 @@ function renderStandardsSection() {
   }
 
   wrap.appendChild(slots);
+
+  // Drag-to-reorder within standards
+  Sortable.create(slots, {
+    draggable: '.standards-slot.filled',
+    filter: '.standards-slot.empty',
+    animation: 300,
+    easing: 'cubic-bezier(0.23, 1, 0.32, 1)',
+    ghostClass: 'standards-slot-ghost',
+    onEnd: () => {
+      const ordered = [...slots.querySelectorAll('.standards-slot.filled')]
+        .map(s => loadStandards().find(m => m.title === s.dataset.title))
+        .filter(Boolean);
+      // Append empties back at the end to keep slot count at MAX_STANDARDS
+      saveStandards(ordered);
+      renderPersonaSection();
+    },
+  });
 
   // Track which slot is hovered during drag — actual save happens in SortableJS onEnd
   wrap.addEventListener('dragover', (e) => {
@@ -413,8 +445,14 @@ function renderPersonaCard(wrap, personas) {
     dots.appendChild(d);
   });
 
+  const btnRefresh = document.createElement('button');
+  btnRefresh.className = 'persona-refresh-btn';
+  btnRefresh.title = 'Regenerate persona';
+  btnRefresh.textContent = '↺';
+  btnRefresh.addEventListener('click', () => renderPersonaSection(true));
+
   overlay.append(label, type, tagline, desc, dots);
-  imgWrap.append(img, btnPrev, btnNext, overlay);
+  imgWrap.append(img, btnPrev, btnNext, overlay, btnRefresh);
   card.appendChild(imgWrap);
   wrap.appendChild(card);
 
@@ -475,9 +513,12 @@ function renderStatsBar(bar, data) {
   });
 }
 
-function renderPersonaSection() {
+function renderPersonaSection(force = false) {
+  if (!PERSONA_ENABLED) return;
   const wrap = document.getElementById('persona-wrap');
   if (!wrap) return;
+
+  if (isPersonaHidden()) { wrap.innerHTML = ''; return; }
 
   const standards = loadStandards();
   if (standards.length === 0) {
@@ -494,13 +535,27 @@ function renderPersonaSection() {
   const cacheKey = getPersonaCacheKey(standards);
 
   // Don't re-render if already showing this exact set of reference films
-  if (cacheKey === personaRenderedForKey) return;
+  if (!force && cacheKey === personaRenderedForKey) return;
 
   personaIndex = 0;
   personaRenderedForKey = cacheKey;
 
   const cache = loadPersonaCache();
-  if (cache && cache.key === cacheKey) { renderPersonaCard(wrap, cache.data.personas); return; }
+  if (!force && cache && cache.key === cacheKey) { renderPersonaCard(wrap, cache.data.personas); return; }
+
+  // Without force, show a prompt card instead of auto-fetching
+  if (!force) {
+    if (!cache) {
+      wrap.innerHTML = `
+        <div class="persona-card persona-prompt">
+          <button class="persona-generate-btn" id="persona-generate-btn">Generate Cinema Persona</button>
+        </div>`;
+      document.getElementById('persona-generate-btn').addEventListener('click', () => renderPersonaSection(true));
+    } else {
+      renderPersonaCard(wrap, cache.data.personas);
+    }
+    return;
+  }
 
   // Loading skeleton
   wrap.innerHTML = `
@@ -545,10 +600,11 @@ function render(list) {
   const g = getGrid('collection');
   g.innerHTML = '';
   const standards = loadStandards();
-  list.forEach(movie => {
+  list.filter(movie => !standards.some(m => m.title === movie.title)).forEach(movie => {
     const card = document.createElement('div');
-    const isStandard = standards.some(m => m.title === movie.title);
-    card.className = 'card movie-card' + (isStandard ? ' is-standard' : '');
+    card.className = 'card movie-card';
+    card.dataset.title = movie.title;
+    card.dataset.view = 'collection';
 
     const imgWrap = document.createElement('div');
     imgWrap.className = 'poster-wrap';
@@ -569,8 +625,8 @@ function render(list) {
     shDiv.style.backgroundImage = `url(${textures.sh})`;
 
     const starBtn = document.createElement('button');
-    starBtn.className = 'card-star-btn' + (isStandard ? ' active' : '');
-    starBtn.title = isStandard ? 'Remove from Reference Films' : 'Add to Reference Films';
+    starBtn.className = 'card-star-btn';
+    starBtn.title = 'Add to Reference Films';
     starBtn.innerHTML = '★';
     starBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -609,55 +665,142 @@ function render(list) {
 const TMDB = 'https://image.tmdb.org/t/p/';
 let currentRec = null;
 let recLoading = false;
+let recError   = null;
+let sessionCost = 0;
+let sessionSearches = 0;
+let totalCost = 0; // initialized after TOTAL_COST_KEY is defined below
 const sessionExcluded = new Set();
+const REC_CACHE_KEY      = 'braintrust_rec_cache_v2';
+const REC_MODEL_KEY      = 'braintrust_rec_model';
+const STARTING_BAL_KEY   = 'braintrust_starting_balance';
+
+function getRecModel() {
+  return localStorage.getItem(REC_MODEL_KEY) || 'sonnet';
+}
+function setRecModel(model) {
+  localStorage.setItem(REC_MODEL_KEY, model);
+}
+const SHOWN_RECS_KEY  = 'braintrust_shown_recs_v1';
+const MAX_SHOWN_RECS  = 20;
+
+function loadShownRecs() {
+  try { return JSON.parse(localStorage.getItem(SHOWN_RECS_KEY) || '[]'); } catch { return []; }
+}
+function saveShownRec(title) {
+  try {
+    const list = loadShownRecs().filter(t => t !== title.toLowerCase());
+    list.unshift(title.toLowerCase());
+    localStorage.setItem(SHOWN_RECS_KEY, JSON.stringify(list.slice(0, MAX_SHOWN_RECS)));
+  } catch {}
+}
+
+function buildExcluded() {
+  return new Set([
+    ...movies.map(m => m.title.toLowerCase()),
+    ...loadBanned().map(m => m.title.toLowerCase()),
+    ...loadWatchlist().map(m => m.title.toLowerCase()),
+    ...loadMaybe().map(m => m.title.toLowerCase()),
+    ...loadMeh().map(m => m.title.toLowerCase()),
+    ...loadStandards().map(m => m.title.toLowerCase()),
+    ...[...sessionExcluded].map(t => t.toLowerCase()),
+    ...loadShownRecs(),
+  ]);
+}
+
+async function doFetchRec(excluded, attempt = 0) {
+  if (attempt >= 3) throw new Error('max_retries');
+  const res = await fetch('/api/recommend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      movies:    movies.map(({ title, year, director }) => ({ title, year, director })),
+      excluded:  [...excluded],
+      standards: loadStandards().map(({ title, year, director }) => ({ title, year, director })),
+      banned:    loadBanned().map(({ title, year, director }) => ({ title, year, director })),
+      model:     getRecModel(),
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    if (body.error === 'out_of_credits') throw 'out_of_credits';
+    if (body.error === 'invalid_rec') {
+      if (body.title) sessionExcluded.add(body.title);
+      return doFetchRec(buildExcluded(), attempt + 1);
+    }
+    throw new Error('api_error');
+  }
+  const rec = await res.json();
+  if (rec?.title && excluded.has(rec.title.toLowerCase())) {
+    sessionExcluded.add(rec.title);
+    return doFetchRec(buildExcluded(), attempt + 1);
+  }
+  if (!rec?.title || !rec?.reason || rec.reason.toLowerCase().startsWith('placeholder')) {
+    return doFetchRec(excluded, attempt + 1);
+  }
+  return rec;
+}
+
+// Prefetch: start API call immediately when user takes an action
+let recPrefetchPromise = null;
+let recFetchInFlight = false;
+function prefetchNextRec() {
+  recPrefetchPromise = doFetchRec(buildExcluded()).catch(() => null);
+}
+
+function loadRecCache() {
+  try { return JSON.parse(localStorage.getItem(REC_CACHE_KEY)); } catch { return null; }
+}
+function saveRecCache(rec) {
+  try { localStorage.setItem(REC_CACHE_KEY, JSON.stringify(rec)); } catch {}
+}
 
 async function fetchRecommendation() {
-  recLoading = true;
+  // Prevent concurrent fetches — if one is already in flight, ignore
+  if (recFetchInFlight) return;
+  recFetchInFlight = true;
   recError = null;
-  currentRec = null;
-  renderRecommendation();
 
-  try {
-    const excluded = [
-      ...movies.map(m => m.title),
-      ...loadBanned().map(m => m.title),
-      ...loadWatchlist().map(m => m.title),
-      ...sessionExcluded,
-    ];
-
-    const res = await fetch('/api/recommend', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ movies, excluded, standards: loadStandards() }),
-    });
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      recError = body.error === 'out_of_credits' ? 'out_of_credits' : true;
-    } else {
-      currentRec = await res.json();
-      if (currentRec?.title) {
-        sessionExcluded.add(currentRec.title);
-        const alreadyListed = [
-          ...movies.map(m => m.title),
-          ...loadWatchlist().map(m => m.title),
-          ...loadMaybe().map(m => m.title),
-          ...loadMeh().map(m => m.title),
-          ...loadBanned().map(m => m.title),
-        ].some(t => t.toLowerCase() === currentRec.title.toLowerCase());
-        if (alreadyListed) { recLoading = false; return fetchRecommendation(); }
-      }
-    }
-  } catch (e) {
-    console.error('Recommendation failed:', e);
-    recError = true;
+  // Show cached rec instantly if available and not already in any list
+  const cached = loadRecCache();
+  const excluded = buildExcluded();
+  if (cached?.title && !excluded.has(cached.title.toLowerCase())) {
+    currentRec = cached;
+    recLoading = false;
+    renderRecommendation();
+  } else {
+    currentRec = null;
+    recLoading = true;
+    renderRecommendation();
   }
 
+  // Fetch fresh (use in-flight prefetch if available)
+  try {
+    const promise = recPrefetchPromise || doFetchRec(buildExcluded());
+    recPrefetchPromise = null;
+    const rec = await promise;
+    const isPlaceholder = !rec?.title || rec?.reason === 'placeholder' || !rec?.reason;
+    if (!isPlaceholder) {
+      sessionExcluded.add(rec.title);
+      saveShownRec(rec.title);
+      currentRec = rec;
+      saveRecCache(rec);
+      if (rec.api_cost != null) {
+        sessionCost += rec.api_cost;
+        sessionSearches++;
+        totalCost += rec.api_cost;
+        localStorage.setItem(TOTAL_COST_KEY, totalCost.toFixed(6));
+      }
+    } else {
+      recError = true;
+    }
+  } catch (e) {
+    recError = e === 'out_of_credits' ? 'out_of_credits' : true;
+  }
+
+  recFetchInFlight = false;
   recLoading = false;
   renderRecommendation();
 }
-
-let recError = null;
 
 
 function renderRecommendation() {
@@ -670,6 +813,43 @@ function renderRecommendation() {
   heading.className = 'rec-heading';
   heading.innerHTML = '🎬 Something New To Watch Today?!';
   headingRow.appendChild(heading);
+
+  const currentModel = getRecModel();
+  const modelToggle = document.createElement('div');
+  modelToggle.className = 'rec-model-toggle';
+  modelToggle.innerHTML = `
+    <span class="rec-model-label ${currentModel === 'sonnet' ? 'active' : ''}">Sonnet</span>
+    <div class="rec-model-switch ${currentModel === 'opus' ? 'on' : ''}">
+      <div class="rec-model-knob"></div>
+    </div>
+    <span class="rec-model-label ${currentModel === 'opus' ? 'active' : ''}">Opus</span>
+  `;
+  modelToggle.addEventListener('click', () => {
+    const next = getRecModel() === 'sonnet' ? 'opus' : 'sonnet';
+    setRecModel(next);
+    renderRecommendation();
+  });
+  const costHint = document.createElement('span');
+  costHint.className = 'rec-cost-hint';
+  const perSearch = currentRec?.api_cost != null
+    ? `$${currentRec.api_cost.toFixed(4)}`
+    : (currentModel === 'opus' ? '~$0.08' : '~$0.02');
+  const parts = [`${perSearch} / search`];
+  if (sessionSearches > 0) parts.push(`<span class="rec-cost-session">$${sessionCost.toFixed(4)} session (${sessionSearches})</span>`);
+  if (totalCost > 0) parts.push(`<span class="rec-cost-total">$${totalCost.toFixed(4)} total</span>`);
+
+  const startingBal = parseFloat(localStorage.getItem(STARTING_BAL_KEY) || '') || null;
+  if (startingBal !== null) {
+    const remaining = startingBal - totalCost;
+    parts.push(`<span class="rec-cost-remaining ${remaining < 1 ? 'rec-cost-low' : ''}">$${remaining.toFixed(2)} remaining</span>`);
+  }
+  costHint.innerHTML = parts.join(' &nbsp;·&nbsp; ');
+
+  const rightGroup = document.createElement('div');
+  rightGroup.className = 'rec-right-group';
+  rightGroup.appendChild(modelToggle);
+  rightGroup.appendChild(costHint);
+  headingRow.appendChild(rightGroup);
   wrap.appendChild(headingRow);
 
   if (recLoading) {
@@ -704,8 +884,8 @@ function renderRecommendation() {
           </div>
         </div>
         <div class="rec-skel-stills">
-          <div class="rec-skel-bar" style="width:360px;height:100%;border-radius:0;flex-shrink:0"></div>
-          <div class="rec-skel-bar" style="width:360px;height:100%;border-radius:0;flex-shrink:0"></div>
+          <div class="rec-skel-bar" style="width:540px;height:100%;border-radius:0;flex-shrink:0"></div>
+          <div class="rec-skel-bar" style="width:540px;height:100%;border-radius:0;flex-shrink:0"></div>
         </div>
       </div>`;
     wrap.appendChild(loadingBanner);
@@ -720,13 +900,11 @@ function renderRecommendation() {
       ? 'Out of API credits. Top up at console.anthropic.com to get recommendations.'
       : 'Could not load recommendation.';
     errorBanner.appendChild(msg);
-    if (recError !== 'out_of_credits') {
-      const retryBtn = document.createElement('button');
-      retryBtn.className = 'rec-btn rec-btn-secondary';
-      retryBtn.textContent = 'Retry';
-      retryBtn.addEventListener('click', fetchRecommendation);
-      errorBanner.appendChild(retryBtn);
-    }
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'rec-btn rec-btn-secondary';
+    retryBtn.textContent = 'Retry';
+    retryBtn.addEventListener('click', fetchRecommendation);
+    errorBanner.appendChild(retryBtn);
     wrap.appendChild(errorBanner);
     return;
   }
@@ -848,6 +1026,7 @@ function renderRecommendation() {
   const alreadyWatchlisted = loadWatchlist().some(m => m.title === rec.title);
   watchBtn.innerHTML = `${ICON_CHECK}<span>${alreadyWatchlisted ? 'On watchlist' : 'Add to watchlist'}</span>`;
   watchBtn.addEventListener('click', () => {
+    prefetchNextRec();
     const list = loadWatchlist();
     if (!list.some(m => m.title === rec.title)) {
       list.unshift({ title: rec.title, year: rec.year, director: rec.director, poster: rec.poster, addedAt: Date.now() });
@@ -860,12 +1039,13 @@ function renderRecommendation() {
   const newBtn = document.createElement('button');
   newBtn.className = 'rec-btn rec-btn-secondary';
   newBtn.innerHTML = `${ICON_REFRESH}<span>One more try</span>`;
-  newBtn.addEventListener('click', () => fetchRecommendation());
+  newBtn.addEventListener('click', () => { prefetchNextRec(); fetchRecommendation(); });
 
   const banBtn = document.createElement('button');
   banBtn.className = 'rec-btn rec-btn-ban';
   banBtn.innerHTML = `${ICON_X}<span>Don't recommend</span>`;
   banBtn.addEventListener('click', () => {
+    prefetchNextRec();
     saveSnapshot(`Before banning "${rec.title}"`);
     const list = loadBanned();
     list.unshift({ title: rec.title, year: rec.year, director: rec.director, poster: rec.poster, addedAt: Date.now() });
@@ -878,6 +1058,7 @@ function renderRecommendation() {
   addBtn.className = 'rec-btn rec-btn-primary';
   addBtn.textContent = 'Already Seen';
   addBtn.addEventListener('click', () => {
+    prefetchNextRec();
     movies.unshift({ title: rec.title, year: rec.year, director: rec.director, poster: rec.poster, addedAt: Date.now() });
     saveMovies();
     render(movies);
@@ -890,6 +1071,7 @@ function renderRecommendation() {
   const alreadyMaybe = loadMaybe().some(m => m.title === rec.title);
   maybeBtn.innerHTML = `${ICON_DICE}<span>${alreadyMaybe ? 'In Wildcard' : 'Wildcard'}</span>`;
   maybeBtn.addEventListener('click', () => {
+    prefetchNextRec();
     const list = loadMaybe();
     if (!list.some(m => m.title === rec.title)) {
       list.unshift({ title: rec.title, year: rec.year, director: rec.director, poster: rec.poster, addedAt: Date.now() });
@@ -904,6 +1086,7 @@ function renderRecommendation() {
   const alreadyMeh = loadMeh().some(m => m.title === rec.title);
   mehBtn.innerHTML = `<span>${alreadyMeh ? '😐 In Meh' : '😐 Meh'}</span>`;
   mehBtn.addEventListener('click', () => {
+    prefetchNextRec();
     saveSnapshot(`Before adding "${rec.title}" to Meh`);
     const list = loadMeh();
     if (!list.some(m => m.title === rec.title)) {
@@ -971,6 +1154,8 @@ const MAYBE_KEY      = 'braintrust_maybe';
 const MEH_KEY        = 'braintrust_meh';
 const SNAPSHOTS_KEY  = 'braintrust_snapshots';
 const STANDARDS_KEY  = 'braintrust_standards';
+const TOTAL_COST_KEY = 'braintrust_total_cost';
+totalCost = parseFloat(localStorage.getItem(TOTAL_COST_KEY) || '0') || 0;
 const MAX_SNAPSHOTS  = 20;
 const MAX_STANDARDS  = 12;
 
@@ -987,6 +1172,7 @@ function saveSnapshot(label = '') {
     meh:       JSON.parse(localStorage.getItem(MEH_KEY)       || '[]'),
     banned:    JSON.parse(localStorage.getItem(BANNED_KEY)    || '[]'),
     standards: JSON.parse(localStorage.getItem(STANDARDS_KEY) || '[]'),
+    totalCost: totalCost,
   };
   const snapshots = loadSnapshots();
   snapshots.unshift(snap);
@@ -1010,10 +1196,16 @@ function restoreSnapshot(snap) {
   localStorage.setItem(MEH_KEY,       JSON.stringify(snap.meh || []));
   localStorage.setItem(BANNED_KEY,    JSON.stringify(snap.banned));
   if (snap.standards) localStorage.setItem(STANDARDS_KEY, JSON.stringify(snap.standards));
+  if (snap.totalCost != null) {
+    totalCost = snap.totalCost;
+    localStorage.setItem(TOTAL_COST_KEY, totalCost.toFixed(6));
+  }
   movies.splice(0, movies.length, ...snap.movies);
   VIEWS.forEach(v => markDirty(v));
   setGridView(gridView);
   renderGridNav();
+  renderStandardsSection();
+  renderPersonaSection();
 }
 
 // Undo toast
@@ -1215,11 +1407,12 @@ function setGridView(view) {
   const pw = document.getElementById('persona-wrap');
   if (pw) pw.style.display = view === 'collection' ? '' : 'none';
   if (dirtyViews.has(view)) {
-    if (view === 'collection') { render(sortedList(movies, 'collection')); applyGrain(); }
+    if (view === 'collection') render(sortedList(movies, 'collection'));
     else if (view === 'watchlist') renderWatchlistGrid();
     else if (view === 'maybe') renderMaybeGrid();
     else if (view === 'meh') renderMehGrid();
     else if (view === 'banned') renderBannedGrid();
+    applyGrain();
   }
   updateSortable(view);
   renderGridNav();
@@ -1281,7 +1474,18 @@ function buildNavButtons(container, compact = false) {
       });
       tabRow.appendChild(btn);
     });
-    container.appendChild(tabRow);
+
+    const tabRowWrap = document.createElement('div');
+    tabRowWrap.className = 'grid-nav-tab-row';
+    tabRowWrap.appendChild(tabRow);
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'grid-add-btn';
+    addBtn.innerHTML = '+ Add film';
+    addBtn.addEventListener('click', () => openSearchModal(gridView));
+    tabRowWrap.appendChild(addBtn);
+
+    container.appendChild(tabRowWrap);
   }
 
   // Update active, counts, labels every time
@@ -1329,10 +1533,11 @@ function buildNavButtons(container, compact = false) {
         });
         sortRow.appendChild(btn);
       });
+
       container.appendChild(sortRow);
     }
     const mode = getSortMode(gridView);
-    sortRow.querySelectorAll('button').forEach(btn => {
+    sortRow.querySelectorAll('[data-sort-key]').forEach(btn => {
       btn.className = 'grid-sort-btn' + (mode === btn.dataset.sortKey ? ' active' : '');
     });
   }
@@ -1357,12 +1562,15 @@ function addTexturesToPoster(posterWrap, key) {
 
 function renderWatchlistGrid() {
   const g = getGrid('watchlist');
-  const list = sortedList(loadWatchlist(), 'watchlist');
+  const stds = loadStandards();
+  const list = sortedList(loadWatchlist(), 'watchlist').filter(m => !stds.some(s => s.title === m.title));
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('watchlist'); return; }
   list.forEach(movie => {
     const card = document.createElement('div');
     card.className = 'card movie-card';
+    card.dataset.title = movie.title;
+    card.dataset.view = 'watchlist';
 
     const posterWrap = document.createElement('div');
     posterWrap.className = 'poster-wrap';
@@ -1420,12 +1628,15 @@ function renderWatchlistGrid() {
 
 function renderBannedGrid() {
   const g = getGrid('banned');
-  const banned = sortedList(loadBanned(), 'banned');
+  const stds = loadStandards();
+  const banned = sortedList(loadBanned(), 'banned').filter(m => !stds.some(s => s.title === m.title));
   g.innerHTML = '';
   if (!banned.length) { showEmptyState(g); markClean('banned'); return; }
   banned.forEach(movie => {
     const card = document.createElement('div');
     card.className = 'card movie-card';
+    card.dataset.title = movie.title;
+    card.dataset.view = 'banned';
 
     const posterWrap = document.createElement('div');
     posterWrap.className = 'poster-wrap';
@@ -1483,12 +1694,15 @@ function renderBannedGrid() {
 
 function renderMaybeGrid() {
   const g = getGrid('maybe');
-  const list = sortedList(loadMaybe(), 'maybe');
+  const stds = loadStandards();
+  const list = sortedList(loadMaybe(), 'maybe').filter(m => !stds.some(s => s.title === m.title));
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('maybe'); return; }
   list.forEach(movie => {
     const card = document.createElement('div');
     card.className = 'card movie-card';
+    card.dataset.title = movie.title;
+    card.dataset.view = 'maybe';
 
     const posterWrap = document.createElement('div');
     posterWrap.className = 'poster-wrap';
@@ -1546,12 +1760,15 @@ function renderMaybeGrid() {
 
 function renderMehGrid() {
   const g = getGrid('meh');
-  const list = sortedList(loadMeh(), 'meh');
+  const stds = loadStandards();
+  const list = sortedList(loadMeh(), 'meh').filter(m => !stds.some(s => s.title === m.title));
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('meh'); return; }
   list.forEach(movie => {
     const card = document.createElement('div');
     card.className = 'card movie-card';
+    card.dataset.title = movie.title;
+    card.dataset.view = 'meh';
 
     const posterWrap = document.createElement('div');
     posterWrap.className = 'poster-wrap';
@@ -1638,14 +1855,23 @@ render(movies);
 renderGridNav();
 fetchRecommendation();
 
+
 setInterval(() => saveSnapshot('Auto-save'), 10 * 60 * 1000);
 
 updateSortable('collection');
 
 // Controls
-let grainEnabled = true;
-let grainLevel = 0.04;
-let darkBoost = 100;
+const GRAIN_KEY = 'braintrust_grain';
+function loadGrainSettings() {
+  try { return JSON.parse(localStorage.getItem(GRAIN_KEY)) || {}; } catch { return {}; }
+}
+function saveGrainSettings() {
+  localStorage.setItem(GRAIN_KEY, JSON.stringify({ grainEnabled, grainLevel, darkBoost }));
+}
+const _g = loadGrainSettings();
+let grainEnabled = _g.grainEnabled ?? true;
+let grainLevel   = _g.grainLevel   ?? 0.04;
+let darkBoost    = _g.darkBoost    ?? 100;
 
 function applyGrain() {
   const opacity = grainEnabled ? grainLevel : 0;
@@ -1666,31 +1892,58 @@ const grainValue = document.getElementById('grain-value');
 const darkSlider = document.getElementById('dark-slider');
 const darkValue  = document.getElementById('dark-value');
 
+// Restore slider positions to saved values
+slider.value = grainLevel;
+grainValue.textContent = Math.round(grainLevel * 100) + '%';
+darkSlider.value = darkBoost;
+darkValue.textContent = '+' + darkBoost + '%';
+if (!grainEnabled) {
+  toggle.classList.add('inactive');
+  slider.disabled = true;
+  darkSlider.disabled = true;
+}
+
 toggle.addEventListener('click', () => {
   grainEnabled = !grainEnabled;
   toggle.classList.toggle('inactive', !grainEnabled);
   slider.disabled = !grainEnabled;
   darkSlider.disabled = !grainEnabled;
+  saveGrainSettings();
   applyGrain();
 });
 
 slider.addEventListener('input', () => {
   grainLevel = parseFloat(slider.value);
   grainValue.textContent = Math.round(grainLevel * 100) + '%';
+  saveGrainSettings();
   applyGrain();
 });
 
 darkSlider.addEventListener('input', () => {
   darkBoost = parseInt(darkSlider.value);
   darkValue.textContent = '+' + darkBoost + '%';
+  saveGrainSettings();
   applyGrain();
 });
 
 // ── Movie Modal ───────────────────────────────────────────────────────────────
 
 const modalDetailsCache = new Map();
+let modalCurrentKey = null;
+let modalList  = [];
+let modalIndex = 0;
 
-function openMovieModal(movie) {
+function openMovieModal(movie, list = null) {
+  if (list) {
+    modalList  = list;
+    modalIndex = list.findIndex(m => m.title === movie.title);
+    if (modalIndex === -1) modalIndex = 0;
+  }
+  const counter = document.getElementById('mm-nav-counter');
+  if (counter) counter.textContent = modalList.length > 1 ? `${modalIndex + 1} / ${modalList.length}` : '';
+  document.getElementById('mm-nav-prev').style.visibility = modalList.length > 1 ? '' : 'hidden';
+  document.getElementById('mm-nav-next').style.visibility = modalList.length > 1 ? '' : 'hidden';
+
   const backdrop = document.getElementById('movie-modal-backdrop');
   const body     = document.getElementById('movie-modal-body');
   backdrop.style.display = 'flex';
@@ -1700,16 +1953,38 @@ function openMovieModal(movie) {
   body.innerHTML = `
     <div class="mm-poster-col">
       <img class="mm-poster" src="${movie.poster}" alt="${movie.title}">
+      <div class="mm-ratings">
+        <div class="mm-loading-bar mm-skel-rating"></div>
+        <div class="mm-loading-bar mm-skel-rating"></div>
+      </div>
     </div>
     <div class="mm-info">
       <div class="mm-title">${movie.title}</div>
       <div class="mm-meta">${movie.director} · ${movie.year}</div>
-      <div class="mm-loading-bar"></div>
-      <div class="mm-loading-bar" style="width:80%;margin-top:8px"></div>
-      <div class="mm-loading-bar" style="width:65%;margin-top:8px"></div>
+      <div class="mm-genres">
+        <div class="mm-loading-bar mm-skel-tag"></div>
+        <div class="mm-loading-bar mm-skel-tag"></div>
+        <div class="mm-loading-bar mm-skel-tag"></div>
+      </div>
+      <div class="mm-loading-bar mm-skel-tagline"></div>
+      <div class="mm-loading-bar" style="margin-top:16px"></div>
+      <div class="mm-loading-bar" style="width:95%;margin-top:6px"></div>
+      <div class="mm-loading-bar" style="width:88%;margin-top:6px"></div>
+      <div class="mm-loading-bar" style="width:80%;margin-top:6px"></div>
+      <div class="mm-loading-bar" style="width:60%;margin-top:6px"></div>
+      <div class="mm-section-label mm-skel-label"></div>
+      <div class="mm-cast">
+        ${Array(7).fill('<div class="mm-cast-item"><div class="mm-cast-photo mm-skel-circle"></div><div class="mm-loading-bar mm-skel-cast-name"></div><div class="mm-loading-bar mm-skel-cast-char"></div></div>').join('')}
+      </div>
+      <div class="mm-section-label mm-skel-label"></div>
+      <div class="mm-crew">
+        ${Array(4).fill('<div class="mm-crew-row"><div class="mm-loading-bar mm-skel-crew-role"></div><div class="mm-loading-bar mm-skel-crew-name"></div></div>').join('')}
+      </div>
     </div>`;
 
   const cacheKey = `${movie.title}__${movie.year}`;
+  modalCurrentKey = cacheKey;
+
   if (modalDetailsCache.has(cacheKey)) {
     renderModalDetails(body, movie, modalDetailsCache.get(cacheKey));
     return;
@@ -1719,8 +1994,7 @@ function openMovieModal(movie) {
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(data => {
       modalDetailsCache.set(cacheKey, data);
-      // Only update if modal is still open for this movie
-      if (backdrop.style.display !== 'none') renderModalDetails(body, movie, data);
+      if (modalCurrentKey === cacheKey) renderModalDetails(body, movie, data);
     })
     .catch(() => {});
 }
@@ -1735,6 +2009,32 @@ function renderModalDetails(body, movie, data) {
   poster.src = data.poster || movie.poster;
   poster.alt = movie.title;
   posterCol.appendChild(poster);
+
+  if (data.imdb_rating || data.rt_score) {
+    const ratings = document.createElement('div');
+    ratings.className = 'mm-ratings';
+    if (data.imdb_rating) {
+      const imdbLink = document.createElement('a');
+      imdbLink.className = 'mm-rating-badge mm-rating-imdb';
+      imdbLink.href = data.imdb_id ? `https://www.imdb.com/title/${data.imdb_id}` : '#';
+      imdbLink.target = '_blank';
+      imdbLink.rel = 'noopener noreferrer';
+      imdbLink.innerHTML = `<span class="mm-rating-logo">IMDb</span><span>⭐ ${data.imdb_rating}</span>`;
+      ratings.appendChild(imdbLink);
+    }
+    if (data.rt_score) {
+      const pct = parseInt(data.rt_score);
+      const fresh = pct >= 60;
+      const rt = document.createElement('a');
+      rt.className = 'mm-rating-badge mm-rating-rt';
+      rt.href = `https://www.rottentomatoes.com/search?search=${encodeURIComponent(movie.title)}`;
+      rt.target = '_blank';
+      rt.rel = 'noopener noreferrer';
+      rt.innerHTML = `<span>${fresh ? '🍅' : '🤢'}</span><span>${data.rt_score}</span>`;
+      ratings.appendChild(rt);
+    }
+    posterCol.appendChild(ratings);
+  }
 
   const info = document.createElement('div');
   info.className = 'mm-info';
@@ -1788,8 +2088,11 @@ function renderModalDetails(body, movie, data) {
     const castRow = document.createElement('div');
     castRow.className = 'mm-cast';
     data.cast.forEach(person => {
-      const item = document.createElement('div');
+      const item = document.createElement('a');
       item.className = 'mm-cast-item';
+      item.href = person.wiki;
+      item.target = '_blank';
+      item.rel = 'noopener noreferrer';
       const photo = document.createElement('div');
       photo.className = 'mm-cast-photo';
       if (person.photo) {
@@ -1822,9 +2125,12 @@ function renderModalDetails(body, movie, data) {
 
     const crewGrid = document.createElement('div');
     crewGrid.className = 'mm-crew';
-    data.keyCrew.forEach(({ role, name }) => {
-      const row = document.createElement('div');
+    data.keyCrew.forEach(({ role, name, wiki }) => {
+      const row = document.createElement('a');
       row.className = 'mm-crew-row';
+      row.href = wiki;
+      row.target = '_blank';
+      row.rel = 'noopener noreferrer';
       row.innerHTML = `<span class="mm-crew-role">${role}</span><span class="mm-crew-name">${name}</span>`;
       crewGrid.appendChild(row);
     });
@@ -1839,11 +2145,125 @@ function closeMovieModal() {
   document.body.style.overflow = '';
 }
 
+function modalNavigate(dir) {
+  if (modalList.length < 2) return;
+  modalIndex = (modalIndex + dir + modalList.length) % modalList.length;
+  openMovieModal(modalList[modalIndex]);
+}
+
 document.getElementById('movie-modal-close').addEventListener('click', closeMovieModal);
+document.getElementById('mm-nav-prev').addEventListener('click', () => modalNavigate(-1));
+document.getElementById('mm-nav-next').addEventListener('click', () => modalNavigate(1));
 document.getElementById('movie-modal-backdrop').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) closeMovieModal();
 });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMovieModal(); });
+document.addEventListener('keydown', (e) => {
+  const open = document.getElementById('movie-modal-backdrop').style.display !== 'none';
+  if (!open) return;
+  if (e.key === 'Escape')      closeMovieModal();
+  if (e.key === 'ArrowLeft')   modalNavigate(-1);
+  if (e.key === 'ArrowRight')  modalNavigate(1);
+});
+
+// ── Context menu ─────────────────────────────────────────────────────────────
+const CTX_VIEW_LABELS = { collection: 'Collection', watchlist: 'To Watch', maybe: 'Wildcard', meh: 'Meh', banned: 'Banned' };
+
+const ctxMenu = document.createElement('div');
+ctxMenu.className = 'ctx-menu';
+document.body.appendChild(ctxMenu);
+
+function buildCtxMenu(view, cardMode = true) {
+  const moveItems = cardMode
+    ? `<button class="ctx-item" data-action="top">Move to top</button>
+       <button class="ctx-item" data-action="bottom">Move to bottom</button>
+       <div class="ctx-divider"></div>
+       ${Object.entries(CTX_VIEW_LABELS)
+         .filter(([v]) => v !== view && v !== 'collection')
+         .map(([v, label]) => `<button class="ctx-item" data-action="moveto" data-to="${v}">Move to ${label}</button>`)
+         .join('')}
+       <div class="ctx-divider"></div>`
+    : '';
+  ctxMenu.innerHTML = moveItems +
+    `<button class="ctx-item" data-action="search">Add film to ${CTX_VIEW_LABELS[view]}…</button>`;
+}
+
+let ctxTarget = null;
+
+function hideCtxMenu() {
+  ctxMenu.style.display = 'none';
+  ctxTarget = null;
+}
+
+function reorderView(title, view, direction) {
+  const loaders = { collection: () => movies, watchlist: loadWatchlist, maybe: loadMaybe, meh: loadMeh, banned: loadBanned };
+  const savers  = {
+    collection: l => { movies.splice(0, movies.length, ...l); saveMovies(); },
+    watchlist: saveWatchlist, maybe: saveMaybe, meh: saveMeh, banned: saveBanned,
+  };
+  const renderers = {
+    collection: () => render(sortedList(movies, 'collection')),
+    watchlist: renderWatchlistGrid, maybe: renderMaybeGrid, meh: renderMehGrid, banned: renderBannedGrid,
+  };
+  const list = loaders[view]();
+  const idx = list.findIndex(m => m.title === title);
+  if (idx === -1) return;
+  const [item] = list.splice(idx, 1);
+  direction === 'top' ? list.unshift(item) : list.push(item);
+  savers[view](list);
+  renderers[view]();
+  applyGrain();
+}
+
+document.querySelector('main').addEventListener('contextmenu', (e) => {
+  const card = e.target.closest('.movie-card');
+  const grid = e.target.closest('.grid[id]');
+
+  if (card && card.dataset.title && card.dataset.view) {
+    e.preventDefault();
+    ctxTarget = card;
+    buildCtxMenu(card.dataset.view, true);
+  } else if (grid) {
+    const view = grid.id.replace('grid-', '');
+    if (!CTX_VIEW_LABELS[view]) return;
+    e.preventDefault();
+    ctxTarget = { dataset: { view } };
+    buildCtxMenu(view, false);
+  } else {
+    return;
+  }
+
+  const menuH = ctxMenu.querySelectorAll('.ctx-item').length * 34 + 16;
+  const x = Math.min(e.clientX, window.innerWidth - 200);
+  const y = Math.min(e.clientY, window.innerHeight - menuH);
+  ctxMenu.style.cssText = `display:block;left:${x}px;top:${y}px`;
+});
+
+ctxMenu.addEventListener('click', (e) => {
+  const btn = e.target.closest('.ctx-item');
+  if (!btn || !ctxTarget) return;
+  const { title, view } = ctxTarget.dataset;
+  if (btn.dataset.action === 'moveto') {
+    const toView = btn.dataset.to;
+    moveBetweenViews(title, view, toView);
+    const renderers = {
+      collection: () => render(sortedList(movies, 'collection')),
+      watchlist: renderWatchlistGrid, maybe: renderMaybeGrid, meh: renderMehGrid, banned: renderBannedGrid,
+    };
+    renderers[view]?.();
+    renderers[toView]?.();
+    renderGridNav();
+    applyGrain();
+  } else if (btn.dataset.action === 'search') {
+    openSearchModal(view);
+  } else {
+    reorderView(title, view, btn.dataset.action);
+  }
+  hideCtxMenu();
+});
+
+document.addEventListener('click', hideCtxMenu);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtxMenu(); });
+document.addEventListener('scroll', hideCtxMenu, true);
 
 // Delegate card clicks across all grids
 document.querySelector('main').addEventListener('click', (e) => {
@@ -1853,9 +2273,137 @@ document.querySelector('main').addEventListener('click', (e) => {
   const titleEl = card.querySelector('.card-name');
   if (!titleEl) return;
   const title = titleEl.textContent;
-  // Find movie in any list
-  const allLists = [movies, loadWatchlist(), loadMaybe(), loadMeh(), loadBanned()];
-  const movie = allLists.flatMap(l => l).find(m => m.title === title);
-  if (movie) openMovieModal(movie);
+  const view = card.dataset.view || 'collection';
+  const listMap = { collection: () => movies, watchlist: loadWatchlist, maybe: loadMaybe, meh: loadMeh, banned: loadBanned };
+  const list = (listMap[view] || (() => movies))();
+  const movie = list.find(m => m.title === title);
+  if (movie) openMovieModal(movie, list);
 });
 
+// ── Film search modal ─────────────────────────────────────────────────────────
+let searchTargetView = null;
+let searchDebounce   = null;
+
+const searchBackdrop = document.getElementById('search-modal-backdrop');
+const searchInput    = document.getElementById('search-input');
+const searchResults  = document.getElementById('search-results');
+
+const VIEW_LOADERS = {
+  collection: () => movies,
+  watchlist: loadWatchlist, maybe: loadMaybe, meh: loadMeh, banned: loadBanned,
+};
+const VIEW_SAVERS = {
+  collection: l => { movies.splice(0, movies.length, ...l); saveMovies(); },
+  watchlist: saveWatchlist, maybe: saveMaybe, meh: saveMeh, banned: saveBanned,
+};
+const VIEW_RENDERERS = {
+  collection: () => render(sortedList(movies, 'collection')),
+  watchlist: renderWatchlistGrid, maybe: renderMaybeGrid, meh: renderMehGrid, banned: renderBannedGrid,
+};
+
+function openSearchModal(view) {
+  searchTargetView = view;
+  searchInput.value = '';
+  searchResults.innerHTML = '';
+  searchBackdrop.style.display = 'flex';
+  setTimeout(() => searchInput.focus(), 50);
+}
+
+function closeSearchModal() {
+  searchBackdrop.style.display = 'none';
+  searchTargetView = null;
+  clearTimeout(searchDebounce);
+}
+
+function renderSearchResults(hits) {
+  searchResults.innerHTML = '';
+  if (!hits.length) {
+    searchResults.innerHTML = '<div class="search-empty">No results</div>';
+    return;
+  }
+  hits.forEach(m => {
+    const row = document.createElement('div');
+    row.className = 'search-result-row';
+
+    const poster = document.createElement('div');
+    poster.className = 'search-result-poster';
+    if (m.poster) {
+      const img = document.createElement('img');
+      img.src = m.poster;
+      img.alt = m.title;
+      poster.appendChild(img);
+    }
+
+    const info = document.createElement('div');
+    info.className = 'search-result-info';
+    info.innerHTML = `<span class="search-result-title">${m.title}</span><span class="search-result-year">${m.year || ''}</span>`;
+
+    const ratings = document.createElement('div');
+    ratings.className = 'search-result-ratings';
+    if (m.imdb_rating) {
+      ratings.innerHTML += `<span class="search-rating-badge search-rating-imdb">IMDb ${m.imdb_rating}</span>`;
+    } else if (m.tmdb_rating) {
+      ratings.innerHTML += `<span class="search-rating-badge search-rating-tmdb">★ ${m.tmdb_rating}</span>`;
+    }
+    if (m.rt_score) {
+      ratings.innerHTML += `<span class="search-rating-badge search-rating-rt">🍅 ${m.rt_score}</span>`;
+    }
+
+    const VIEW_LABELS = { collection: 'Collection', watchlist: 'To Watch', maybe: 'Wildcard', meh: 'Meh', banned: "Don't Recommend" };
+    const existingView = Object.keys(VIEW_LOADERS).find(v => VIEW_LOADERS[v]().some(x => x.title === m.title));
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'search-add-btn';
+
+    if (existingView) {
+      addBtn.textContent = `In ${VIEW_LABELS[existingView]}`;
+      addBtn.disabled = true;
+      addBtn.classList.add('search-add-btn-exists');
+    } else {
+      addBtn.textContent = 'Add';
+    }
+
+    const doAdd = () => {
+      const view = searchTargetView;
+      const list = VIEW_LOADERS[view]();
+      if (list.some(x => x.title === m.title)) { closeSearchModal(); return; }
+      list.unshift({ title: m.title, year: m.year, director: '', poster: m.poster || '', addedAt: Date.now() });
+      VIEW_SAVERS[view](list);
+      VIEW_RENDERERS[view]();
+      renderGridNav();
+      applyGrain();
+      closeSearchModal();
+    };
+
+    if (!existingView) addBtn.addEventListener('click', doAdd);
+
+    row.appendChild(poster);
+    row.appendChild(info);
+    row.appendChild(ratings);
+    row.appendChild(addBtn);
+
+    searchResults.appendChild(row);
+  });
+}
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchDebounce);
+  const q = searchInput.value.trim();
+  if (q.length < 2) { searchResults.innerHTML = ''; return; }
+  searchResults.innerHTML = '<div class="search-empty">Searching…</div>';
+  searchDebounce = setTimeout(async () => {
+    try {
+      const res  = await fetch(`/api/search-movie?q=${encodeURIComponent(q)}`);
+      const hits = await res.json();
+      renderSearchResults(hits);
+    } catch {
+      searchResults.innerHTML = '<div class="search-empty">Search failed</div>';
+    }
+  }, 300);
+});
+
+document.getElementById('search-modal-close').addEventListener('click', closeSearchModal);
+searchBackdrop.addEventListener('click', (e) => { if (e.target === searchBackdrop) closeSearchModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && searchBackdrop.style.display !== 'none') closeSearchModal();
+});

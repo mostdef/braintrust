@@ -1,3 +1,5 @@
+const PERSONA_ENABLED = true; // set to false to disable persona (saves API credits)
+
 // ── View management ───────────────────────────────────────────────────────────
 const VIEWS = ['collection','watchlist','maybe','meh','banned'];
 const dirtyViews = new Set(VIEWS);
@@ -509,22 +511,38 @@ function renderPersonaCard(wrap, data) {
   const type  = document.createElement('div'); type.className  = 'persona-type';  type.textContent  = data.type;
   const tagline = document.createElement('div'); tagline.className = 'persona-tagline'; tagline.textContent = `"${data.tagline}"`;
   const desc  = document.createElement('div'); desc.className  = 'persona-description'; desc.textContent = data.description;
+  const btnRefresh = document.createElement('button');
+  btnRefresh.className = 'persona-refresh-btn';
+  btnRefresh.title = 'Regenerate persona';
+  btnRefresh.textContent = '↺';
+  btnRefresh.addEventListener('click', () => renderPersonaSection(true));
+
   overlay.append(label, type, tagline, desc);
-  imgWrap.append(img, overlay);
+  imgWrap.append(img, overlay, btnRefresh);
   card.appendChild(imgWrap);
   wrap.appendChild(card);
   img.src = imageUrl;
   img.onload = () => img.classList.add('loaded');
 }
 
-function renderPersonaSection() {
+function renderPersonaSection(force = false) {
+  if (!PERSONA_ENABLED) return;
   const wrap = document.getElementById('persona-wrap');
   if (!wrap) return;
   const standards = loadStandards();
   if (standards.length === 0) { wrap.innerHTML = ''; return; }
   const cacheKey = getPersonaCacheKey(standards);
   const cache = loadPersonaCache();
-  if (cache && cache.key === cacheKey) { renderPersonaCard(wrap, cache.data); return; }
+
+  if (!force) {
+    if (cache && cache.key === cacheKey) { renderPersonaCard(wrap, cache.data); return; }
+    wrap.innerHTML = `
+      <div class="persona-card persona-prompt">
+        <button class="persona-generate-btn" id="persona-generate-btn">Generate Literary Persona</button>
+      </div>`;
+    document.getElementById('persona-generate-btn').addEventListener('click', () => renderPersonaSection(true));
+    return;
+  }
 
   wrap.innerHTML = `
     <div class="persona-card persona-loading">
