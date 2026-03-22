@@ -1,4 +1,4 @@
-const PERSONA_ENABLED = true; // set to false to disable persona & stats (saves API credits)
+const PERSONA_ENABLED = false; // set to false to disable persona & stats (saves API credits)
 const PERSONA_HIDDEN_KEY = 'braintrust_persona_hidden';
 function isPersonaHidden() { return localStorage.getItem(PERSONA_HIDDEN_KEY) === '1'; }
 function setPersonaHidden(v) { localStorage.setItem(PERSONA_HIDDEN_KEY, v ? '1' : '0'); }
@@ -652,6 +652,7 @@ function render(list) {
 
     info.appendChild(title);
     info.appendChild(meta);
+    appendCardRatings(info, movie);
     card.appendChild(imgWrap);
     card.appendChild(info);
     g.appendChild(card);
@@ -660,6 +661,38 @@ function render(list) {
   });
   if (!list.length) showEmptyState(g);
   markClean('collection');
+}
+
+const CARD_RATINGS_KEY = 'braintrust_card_ratings';
+function isCardRatingsEnabled() {
+  return localStorage.getItem(CARD_RATINGS_KEY) !== 'false';
+}
+
+function appendCardRatings(info, movie) {
+  // Always wrap title+meta in a left column so card-info (flex row) is consistent
+  const left = document.createElement('div');
+  left.className = 'card-info-left';
+  while (info.firstChild) left.appendChild(info.firstChild);
+  info.appendChild(left);
+
+  if (!isCardRatingsEnabled()) return;
+  if (!movie.imdb_rating && !movie.rt_score) return;
+
+  const ratings = document.createElement('div');
+  ratings.className = 'card-ratings';
+  if (movie.imdb_rating) {
+    const imdb = document.createElement('span');
+    imdb.className = 'card-rating card-rating-imdb';
+    imdb.textContent = `IMDb ${movie.imdb_rating}`;
+    ratings.appendChild(imdb);
+  }
+  if (movie.rt_score) {
+    const rt = document.createElement('span');
+    rt.className = 'card-rating card-rating-rt';
+    rt.textContent = `🍅 ${movie.rt_score}`;
+    ratings.appendChild(rt);
+  }
+  info.appendChild(ratings);
 }
 
 const TMDB = 'https://image.tmdb.org/t/p/';
@@ -1355,6 +1388,20 @@ function sortedList(list, view) {
   if (mode === 'date') {
     return [...list].sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
   }
+  if (mode === 'rt') {
+    return [...list].sort((a, b) => {
+      const aScore = a.rt_score ? parseInt(a.rt_score) : -1;
+      const bScore = b.rt_score ? parseInt(b.rt_score) : -1;
+      return bScore - aScore;
+    });
+  }
+  if (mode === 'imdb') {
+    return [...list].sort((a, b) => {
+      const aScore = a.imdb_rating ? parseFloat(a.imdb_rating) : -1;
+      const bScore = b.imdb_rating ? parseFloat(b.imdb_rating) : -1;
+      return bScore - aScore;
+    });
+  }
   return list; // preference = stored order
 }
 
@@ -1368,7 +1415,7 @@ const NAV_ICONS = {
 
 function updateSortable(view) {
   const el = getGrid(view);
-  const locked = getSortMode(view) === 'date';
+  const locked = getSortMode(view) !== 'preference';
   el.classList.toggle('sort-locked', locked);
   if (sortableInstance) sortableInstance.destroy();
   sortableInstance = Sortable.create(el, {
@@ -1543,13 +1590,10 @@ function buildNavButtons(container, compact = false) {
     tabRowWrap.className = 'grid-nav-tab-row';
     tabRowWrap.appendChild(tabRow);
 
-    const addBtn = document.createElement('button');
-    addBtn.className = 'grid-add-btn';
-    addBtn.innerHTML = '+ Add film';
-    addBtn.addEventListener('click', () => openSearchModal(gridView));
-    tabRowWrap.appendChild(addBtn);
-
-    container.appendChild(tabRowWrap);
+    const inner = document.createElement('div');
+    inner.className = 'grid-nav-inner';
+    inner.appendChild(tabRowWrap);
+    container.appendChild(inner);
   }
 
   // Update active, counts, labels every time
@@ -1566,7 +1610,6 @@ function buildNavButtons(container, compact = false) {
   const slider = tabRow.querySelector('.grid-nav-slider');
   if (activeBtn && slider) {
     if (!slider.dataset.init) {
-      // First paint: snap to position without transition so we have a valid start value
       slider.style.transition = 'none';
       requestAnimationFrame(() => {
         slider.style.left  = activeBtn.offsetLeft + 'px';
@@ -1583,11 +1626,21 @@ function buildNavButtons(container, compact = false) {
   }
 
   if (!compact) {
-    let sortRow = container.querySelector('.grid-sort-row');
+    const inner = container.querySelector('.grid-nav-inner');
+    let sortRow = inner.querySelector('.grid-sort-row');
     if (!sortRow) {
       sortRow = document.createElement('div');
       sortRow.className = 'grid-sort-row';
-      [{ key: 'preference', label: 'Preference' }, { key: 'date', label: 'Date added' }].forEach(({ key, label }) => {
+
+      const addBtn = document.createElement('button');
+      addBtn.className = 'grid-add-btn';
+      addBtn.innerHTML = '+ Add film';
+      addBtn.addEventListener('click', () => openSearchModal(gridView));
+      sortRow.appendChild(addBtn);
+
+      const pills = document.createElement('div');
+      pills.className = 'grid-sort-pills';
+      [{ key: 'preference', label: 'Preference' }, { key: 'date', label: 'Date added' }, { key: 'rt', label: 'RT ↓' }, { key: 'imdb', label: 'IMDb ↓' }].forEach(({ key, label }) => {
         const btn = document.createElement('button');
         btn.dataset.sortKey = key;
         btn.textContent = label;
@@ -1595,10 +1648,11 @@ function buildNavButtons(container, compact = false) {
           setSortMode(gridView, key);
           setGridView(gridView);
         });
-        sortRow.appendChild(btn);
+        pills.appendChild(btn);
       });
+      sortRow.appendChild(pills);
 
-      container.appendChild(sortRow);
+      inner.appendChild(sortRow);
     }
     const mode = getSortMode(gridView);
     sortRow.querySelectorAll('[data-sort-key]').forEach(btn => {
@@ -1681,6 +1735,7 @@ function renderWatchlistGrid() {
 
     info.appendChild(title);
     info.appendChild(meta);
+    appendCardRatings(info, movie);
     card.appendChild(posterWrap);
     card.appendChild(info);
 
@@ -1747,6 +1802,7 @@ function renderBannedGrid() {
 
     info.appendChild(title);
     info.appendChild(meta);
+    appendCardRatings(info, movie);
     card.appendChild(posterWrap);
     card.appendChild(info);
 
@@ -1813,6 +1869,7 @@ function renderMaybeGrid() {
 
     info.appendChild(title);
     info.appendChild(meta);
+    appendCardRatings(info, movie);
     card.appendChild(posterWrap);
     card.appendChild(info);
 
@@ -1879,6 +1936,7 @@ function renderMehGrid() {
 
     info.appendChild(title);
     info.appendChild(meta);
+    appendCardRatings(info, movie);
     card.appendChild(posterWrap);
     card.appendChild(info);
 
@@ -1951,45 +2009,6 @@ function applyGrain() {
 
 applyGrain();
 
-const toggle     = document.getElementById('texture-toggle');
-const slider     = document.getElementById('grain-slider');
-const grainValue = document.getElementById('grain-value');
-const darkSlider = document.getElementById('dark-slider');
-const darkValue  = document.getElementById('dark-value');
-
-// Restore slider positions to saved values
-slider.value = grainLevel;
-grainValue.textContent = Math.round(grainLevel * 100) + '%';
-darkSlider.value = darkBoost;
-darkValue.textContent = '+' + darkBoost + '%';
-if (!grainEnabled) {
-  toggle.classList.add('inactive');
-  slider.disabled = true;
-  darkSlider.disabled = true;
-}
-
-toggle.addEventListener('click', () => {
-  grainEnabled = !grainEnabled;
-  toggle.classList.toggle('inactive', !grainEnabled);
-  slider.disabled = !grainEnabled;
-  darkSlider.disabled = !grainEnabled;
-  saveGrainSettings();
-  applyGrain();
-});
-
-slider.addEventListener('input', () => {
-  grainLevel = parseFloat(slider.value);
-  grainValue.textContent = Math.round(grainLevel * 100) + '%';
-  saveGrainSettings();
-  applyGrain();
-});
-
-darkSlider.addEventListener('input', () => {
-  darkBoost = parseInt(darkSlider.value);
-  darkValue.textContent = '+' + darkBoost + '%';
-  saveGrainSettings();
-  applyGrain();
-});
 
 // ── Movie Modal ───────────────────────────────────────────────────────────────
 
@@ -2340,7 +2359,7 @@ document.querySelector('main').addEventListener('click', (e) => {
   const title = titleEl.textContent;
   const view = card.dataset.view || 'collection';
   const listMap = { collection: () => movies, watchlist: loadWatchlist, maybe: loadMaybe, meh: loadMeh, banned: loadBanned };
-  const list = (listMap[view] || (() => movies))();
+  const list = sortedList((listMap[view] || (() => movies))(), view);
   const movie = list.find(m => m.title === title);
   if (movie) openMovieModal(movie, list);
 });

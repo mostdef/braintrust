@@ -18,8 +18,7 @@ body {
 header {
   padding: 20px 48px 16px;
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   gap: 0;
 }
 
@@ -49,19 +48,23 @@ header {
   font-size: 16px;
 }
 
-header h1 {
+.site-title {
   font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: #111;
-  width: 100%;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.site-title:hover {
+  color: #555;
 }
 
 nav {
   display: flex;
   gap: 24px;
-  margin-top: 12px;
-  width: 100%;
+  margin-left: auto;
 }
 
 .nav-link-settings {
@@ -714,6 +717,12 @@ main {
   border-bottom: 1px solid rgba(0, 0, 0, 0.07);
 }
 
+.grid-nav-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .grid-nav-tab-row {
   display: flex;
   align-items: center;
@@ -747,6 +756,13 @@ main {
 .grid-sort-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.grid-sort-pills {
+  display: flex;
+  align-items: center;
   gap: 4px;
   background: rgba(0,0,0,0.04);
   border-radius: 10px;
@@ -755,17 +771,15 @@ main {
 
 .grid-add-btn {
   padding: 5px 18px;
-  border-radius: 16px;
+  border-radius: 8px;
   border: none;
   background: rgba(0,0,0,0.04);
   font-family: 'Inter', sans-serif;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 500;
   color: #888;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
-  height: 100%;
-  align-self: stretch;
 }
 
 .grid-add-btn:hover {
@@ -1219,6 +1233,21 @@ main {
   margin-top: 4px;
 }
 
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+}
+
+.settings-toggle-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 .settings-label {
   display: block;
   font-size: 12px;
@@ -1560,9 +1589,11 @@ main {
 }
 
 .movie-card .card-info {
-  padding: 0 0 8px 4px;
+  padding: 0 4px 8px 4px;
   margin-top: 0;
   background: #fff;
+  flex-direction: row;
+  align-items: flex-start;
 }
 
 .people-card .card-info {
@@ -1592,6 +1623,41 @@ main {
 .people-card .card-trade {
   font-size: 12px;
   margin-top: 0;
+}
+
+.card-info-left {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-ratings {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-left: auto;
+  padding-left: 6px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.card-rating {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.card-rating-imdb {
+  background: #f5c518;
+  color: #000;
+}
+
+.card-rating-rt {
+  background: #fa320a;
+  color: #fff;
 }
 
 .card-sheen {

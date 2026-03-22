@@ -12,15 +12,22 @@
 </head>
 <body>
   <header>
-    <h1>The Curator</h1>
+    <a href="movies.html" class="site-title">The Curator</a>
     <nav>
-      <a href="movies.html" class="nav-link">Movies</a>
       <a href="settings.html" class="nav-link nav-link-settings active">Settings</a>
     </nav>
   </header>
 
   <main class="settings-main">
     <h2 class="settings-title">Settings</h2>
+
+    <section class="settings-section">
+      <h3 class="settings-section-title">Card Display</h3>
+      <label class="settings-toggle-row">
+        <input type="checkbox" id="card-ratings-toggle" />
+        <span>Show IMDb &amp; RT ratings on cards</span>
+      </label>
+    </section>
 
     <section class="settings-section">
       <h3 class="settings-section-title">Cost Tracking</h3>

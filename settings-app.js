@@ -1,3 +1,4 @@
+const CARD_RATINGS_KEY   = 'braintrust_card_ratings';
 const STORAGE_KEY        = 'braintrust_movies';
 const WATCHLIST_KEY      = 'braintrust_watchlist';
 const MAYBE_KEY          = 'braintrust_maybe';
@@ -167,6 +168,13 @@ document.getElementById('clear-balance-btn').addEventListener('click', () => {
 });
 
 renderCostStats();
+
+// ── Card display ──────────────────────────────────────────────────────────────
+const cardRatingsToggle = document.getElementById('card-ratings-toggle');
+cardRatingsToggle.checked = localStorage.getItem(CARD_RATINGS_KEY) !== 'false';
+cardRatingsToggle.addEventListener('change', () => {
+  localStorage.setItem(CARD_RATINGS_KEY, cardRatingsToggle.checked ? 'true' : 'false');
+});
 
 document.getElementById('save-snapshot-btn').addEventListener('click', async function () {
   this.textContent = 'Saving…';
