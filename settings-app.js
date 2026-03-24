@@ -2,7 +2,9 @@ const CARD_RATINGS_KEY   = 'braintrust_card_ratings';
 const STORAGE_KEY        = 'braintrust_movies';
 const WATCHLIST_KEY      = 'braintrust_watchlist';
 const MAYBE_KEY          = 'braintrust_maybe';
+const MEH_KEY            = 'braintrust_meh';
 const BANNED_KEY         = 'braintrust_banned';
+const STANDARDS_KEY      = 'braintrust_standards';
 const TOTAL_COST_KEY     = 'braintrust_total_cost';
 const STARTING_BAL_KEY   = 'braintrust_starting_balance';
 
@@ -10,7 +12,10 @@ function applySnapshot(snap) {
   localStorage.setItem(STORAGE_KEY,   JSON.stringify(snap.movies    || []));
   localStorage.setItem(WATCHLIST_KEY, JSON.stringify(snap.watchlist || []));
   localStorage.setItem(MAYBE_KEY,     JSON.stringify(snap.maybe     || []));
+  localStorage.setItem(MEH_KEY,       JSON.stringify(snap.meh       || []));
   localStorage.setItem(BANNED_KEY,    JSON.stringify(snap.banned    || []));
+  if (snap.standards) localStorage.setItem(STANDARDS_KEY, JSON.stringify(snap.standards));
+  if (snap.totalCost != null) localStorage.setItem(TOTAL_COST_KEY, snap.totalCost.toFixed(6));
 }
 
 function formatDate(ts) {
@@ -165,6 +170,11 @@ document.getElementById('clear-balance-btn').addEventListener('click', () => {
   localStorage.removeItem(STARTING_BAL_KEY);
   document.getElementById('starting-balance-input').value = '';
   document.getElementById('cost-remaining-value').textContent = '—';
+});
+
+document.getElementById('clear-total-btn').addEventListener('click', () => {
+  localStorage.removeItem(TOTAL_COST_KEY);
+  renderCostStats();
 });
 
 renderCostStats();

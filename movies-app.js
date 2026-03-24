@@ -171,17 +171,23 @@ function addTilt(card) {
   sheen.className = 'card-sheen';
   card.appendChild(sheen);
 
+  let tiltFrame = null;
   card.addEventListener('mousemove', (e) => {
-    const rect = card.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5;
-    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    if (tiltFrame) return;
+    const cx = e.clientX, cy = e.clientY;
+    tiltFrame = requestAnimationFrame(() => {
+      const rect = card.getBoundingClientRect();
+      const x = (cx - rect.left) / rect.width - 0.5;
+      const y = (cy - rect.top) / rect.height - 0.5;
 
-    card.style.transition = 'transform 0.05s linear, box-shadow 0.05s linear';
-    card.style.transform = `perspective(800px) rotateY(${x * 7}deg) rotateX(${-y * 7}deg) scale(1.02)`;
-    card.style.boxShadow = `${-x * 10}px ${y * 10}px 24px rgba(0,0,0,0.2)`;
+      card.style.transition = 'transform 0.05s linear, box-shadow 0.05s linear';
+      card.style.transform = `perspective(800px) rotateY(${x * 7}deg) rotateX(${-y * 7}deg) scale(1.02)`;
+      card.style.boxShadow = `${-x * 10}px ${y * 10}px 24px rgba(0,0,0,0.2)`;
 
-    sheen.style.opacity = '1';
-    sheen.style.background = `radial-gradient(circle at ${(0.5 - x) * 100}% ${(0.5 - y) * 100}%, rgba(255,255,255,0.12) 0%, transparent 65%)`;
+      sheen.style.opacity = '1';
+      sheen.style.background = `radial-gradient(circle at ${(0.5 - x) * 100}% ${(0.5 - y) * 100}%, rgba(255,255,255,0.12) 0%, transparent 65%)`;
+      tiltFrame = null;
+    });
   });
 
   card.addEventListener('mouseleave', () => {
@@ -193,9 +199,20 @@ function addTilt(card) {
 }
 
 const textureCache = new Map();
+const TEXTURE_CACHE_MAX = 80;
 function getCachedTextures(key) {
-  if (!textureCache.has(key)) textureCache.set(key, generateFoldTextures());
-  return textureCache.get(key);
+  if (textureCache.has(key)) {
+    const val = textureCache.get(key);
+    textureCache.delete(key);
+    textureCache.set(key, val);
+    return val;
+  }
+  if (textureCache.size >= TEXTURE_CACHE_MAX) {
+    textureCache.delete(textureCache.keys().next().value);
+  }
+  const textures = generateFoldTextures();
+  textureCache.set(key, textures);
+  return textures;
 }
 
 function renderStandardsSection() {
@@ -250,8 +267,9 @@ function renderStandardsSection() {
       removeBtn.addEventListener('click', () => {
         const updated = loadStandards().filter(m => m.title !== movie.title);
         saveStandards(updated);
-        render(sortedList(movies, 'collection'));
-        applyGrain();
+        markDirty('collection');
+        setGridView('collection');
+        renderGridNav();
       });
       slot.appendChild(removeBtn);
     } else {
@@ -599,8 +617,8 @@ function render(list) {
   renderPersonaSection();
   const g = getGrid('collection');
   g.innerHTML = '';
-  const standards = loadStandards();
-  list.filter(movie => !standards.some(m => m.title === movie.title)).forEach(movie => {
+  const standardTitles = new Set(loadStandards().map(m => m.title));
+  list.filter(movie => !standardTitles.has(movie.title)).forEach(movie => {
     const card = document.createElement('div');
     card.className = 'card movie-card';
     card.dataset.title = movie.title;
@@ -837,6 +855,7 @@ async function fetchRecommendation() {
     if (!isPlaceholder) {
       sessionExcluded.add(rec.title);
       saveShownRec(rec.title);
+      rec._model = getRecModel();
       currentRec = rec;
       saveRecCache(rec);
       if (rec.api_cost != null) {
@@ -928,7 +947,7 @@ function updateRecCostHint() {
   const hint = document.getElementById('rec-cost-hint');
   if (!hint) return;
   const currentModel = getRecModel();
-  const perSearch = currentRec?.api_cost != null
+  const perSearch = (currentRec?.api_cost != null && currentRec?._model === currentModel)
     ? `$${currentRec.api_cost.toFixed(4)}`
     : (currentModel === 'opus' ? '~$0.08' : '~$0.02');
   const parts = [`${perSearch} / search`];
@@ -1335,6 +1354,7 @@ function loadBanned() {
 }
 function saveBanned(list) {
   localStorage.setItem(BANNED_KEY, JSON.stringify(list));
+  invalidateTabCounts();
   if (gridView !== 'banned') markDirty('banned');
 }
 
@@ -1343,6 +1363,7 @@ function loadWatchlist() {
 }
 function saveWatchlist(list) {
   localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list));
+  invalidateTabCounts();
   if (gridView !== 'watchlist') markDirty('watchlist');
 }
 
@@ -1351,6 +1372,7 @@ function loadMaybe() {
 }
 function saveMaybe(list) {
   localStorage.setItem(MAYBE_KEY, JSON.stringify(list));
+  invalidateTabCounts();
   if (gridView !== 'maybe') markDirty('maybe');
 }
 
@@ -1359,6 +1381,7 @@ function loadMeh() {
 }
 function saveMeh(list) {
   localStorage.setItem(MEH_KEY, JSON.stringify(list));
+  invalidateTabCounts();
   if (gridView !== 'meh') markDirty('meh');
 }
 
@@ -1367,11 +1390,16 @@ const BAN_SVG_LG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" 
 
 let gridView = 'collection'; // 'collection' | 'watchlist' | 'maybe' | 'banned'
 let sortableInstance;
+let sortableView = null;
 let currentSaveOrder = null;
 
 const SORT_KEY = 'braintrust_sort';
+let _sortModesCache = null;
 function loadSortModes() {
-  try { return JSON.parse(localStorage.getItem(SORT_KEY) || '{}'); } catch(e) { return {}; }
+  if (!_sortModesCache) {
+    try { _sortModesCache = JSON.parse(localStorage.getItem(SORT_KEY) || '{}'); } catch(e) { _sortModesCache = {}; }
+  }
+  return _sortModesCache;
 }
 function getSortMode(view) {
   return loadSortModes()[view] || 'preference';
@@ -1417,92 +1445,105 @@ function updateSortable(view) {
   const el = getGrid(view);
   const locked = getSortMode(view) !== 'preference';
   el.classList.toggle('sort-locked', locked);
-  if (sortableInstance) sortableInstance.destroy();
-  sortableInstance = Sortable.create(el, {
-    animation: 600,
-    easing: 'cubic-bezier(0.23, 1, 0.32, 1)',
-    swapThreshold: 0.3,
-    ghostClass: 'sortable-ghost',
-    disabled: locked,
-    onStart: (evt) => {
-      draggedCard          = evt.item;
-      droppedOnTab         = false;
-      pendingStandardsSlot = null;
-      document.querySelectorAll('.grid-nav-btn').forEach(btn => {
-        if (btn.dataset.key !== gridView) btn.classList.add('drop-target');
-      });
-      if (gridView === 'collection') document.getElementById('standards-wrap')?.classList.add('drag-active');
-    },
-    onEnd: () => {
-      document.querySelectorAll('.grid-nav-btn').forEach(btn => btn.classList.remove('drop-target', 'drop-hover'));
-      document.getElementById('standards-wrap')?.classList.remove('drag-active');
-      document.getElementById('standards-wrap')?.querySelectorAll('.standards-slot').forEach(s => s.classList.remove('drop-hover'));
 
-      // Drop onto a standards slot
-      if (pendingStandardsSlot && draggedCard) {
-        const title = draggedCard.querySelector('.card-name').textContent;
-        const film  = movies.find(m => m.title === title);
-        if (film) {
-          const stds = loadStandards();
-          if (!stds.some(m => m.title === title) && stds.length < MAX_STANDARDS) {
-            stds.push({ title: film.title, year: film.year, director: film.director, poster: film.poster });
-            saveStandards(stds);
-            markDirty('collection');
-          }
-        }
+  if (sortableInstance && sortableView === view) {
+    // Same grid — just toggle lock state, no teardown needed
+    sortableInstance.option('disabled', locked);
+  } else {
+    if (sortableInstance) sortableInstance.destroy();
+    sortableInstance = Sortable.create(el, {
+      animation: 600,
+      easing: 'cubic-bezier(0.23, 1, 0.32, 1)',
+      swapThreshold: 0.3,
+      ghostClass: 'sortable-ghost',
+      disabled: locked,
+      onStart: (evt) => {
+        draggedCard          = evt.item;
+        droppedOnTab         = false;
         pendingStandardsSlot = null;
-        draggedCard  = null;
-        droppedOnTab = false;
-        setGridView(gridView);
-        renderGridNav();
-        return;
-      }
+        document.querySelectorAll('.grid-nav-btn').forEach(btn => {
+          if (btn.dataset.key !== gridView) btn.classList.add('drop-target');
+        });
+        if (gridView === 'collection') document.getElementById('standards-wrap')?.classList.add('drag-active');
+      },
+      onEnd: () => {
+        document.querySelectorAll('.grid-nav-btn').forEach(btn => btn.classList.remove('drop-target', 'drop-hover'));
+        document.getElementById('standards-wrap')?.classList.remove('drag-active');
+        document.getElementById('standards-wrap')?.querySelectorAll('.standards-slot').forEach(s => s.classList.remove('drop-hover'));
 
-      if (droppedOnTab) {
-        droppedOnTab = false;
-        draggedCard  = null;
-        setGridView(gridView);
-        renderGridNav();
-        return;
-      }
-      draggedCard = null;
-      if (currentSaveOrder) currentSaveOrder();
-    },
-  });
+        // Drop onto a standards slot
+        if (pendingStandardsSlot && draggedCard) {
+          const title = draggedCard.querySelector('.card-name').textContent;
+          const film  = movies.find(m => m.title === title);
+          if (film) {
+            const stds = loadStandards();
+            if (!stds.some(m => m.title === title) && stds.length < MAX_STANDARDS) {
+              stds.push({ title: film.title, year: film.year, director: film.director, poster: film.poster });
+              saveStandards(stds);
+              markDirty('collection');
+            }
+          }
+          pendingStandardsSlot = null;
+          draggedCard  = null;
+          droppedOnTab = false;
+          setGridView(gridView);
+          renderGridNav();
+          return;
+        }
+
+        if (droppedOnTab) {
+          droppedOnTab = false;
+          draggedCard  = null;
+          setGridView(gridView);
+          renderGridNav();
+          return;
+        }
+        draggedCard = null;
+        if (currentSaveOrder) currentSaveOrder();
+      },
+    });
+    sortableView = view;
+  }
+
+  // Always update currentSaveOrder for the active view
   if (view === 'collection') {
     currentSaveOrder = syncOrderFromDOM;
   } else if (view === 'watchlist') {
     currentSaveOrder = () => {
+      const list = loadWatchlist();
       const newOrder = [];
       el.querySelectorAll('.movie-card').forEach(card => {
-        const m = loadWatchlist().find(x => x.title === card.querySelector('.card-name').textContent);
+        const m = list.find(x => x.title === card.querySelector('.card-name').textContent);
         if (m) newOrder.push(m);
       });
       saveWatchlist(newOrder);
     };
   } else if (view === 'maybe') {
     currentSaveOrder = () => {
+      const list = loadMaybe();
       const newOrder = [];
       el.querySelectorAll('.movie-card').forEach(card => {
-        const m = loadMaybe().find(x => x.title === card.querySelector('.card-name').textContent);
+        const m = list.find(x => x.title === card.querySelector('.card-name').textContent);
         if (m) newOrder.push(m);
       });
       saveMaybe(newOrder);
     };
   } else if (view === 'meh') {
     currentSaveOrder = () => {
+      const list = loadMeh();
       const newOrder = [];
       el.querySelectorAll('.movie-card').forEach(card => {
-        const m = loadMeh().find(x => x.title === card.querySelector('.card-name').textContent);
+        const m = list.find(x => x.title === card.querySelector('.card-name').textContent);
         if (m) newOrder.push(m);
       });
       saveMeh(newOrder);
     };
   } else if (view === 'banned') {
     currentSaveOrder = () => {
+      const list = loadBanned();
       const newOrder = [];
       el.querySelectorAll('.movie-card').forEach(card => {
-        const m = loadBanned().find(x => x.title === card.querySelector('.card-name').textContent);
+        const m = list.find(x => x.title === card.querySelector('.card-name').textContent);
         if (m) newOrder.push(m);
       });
       saveBanned(newOrder);
@@ -1537,14 +1578,21 @@ const NAV_TABS = [
   { key: 'banned',     label: "Don't Recommend" },
 ];
 
-function getTabCount(key) {
-  if (key === 'collection') return movies.length;
-  if (key === 'watchlist')  return loadWatchlist().length;
-  if (key === 'maybe')      return loadMaybe().length;
-  if (key === 'meh')        return loadMeh().length;
-  if (key === 'banned')     return loadBanned().length;
-  return 0;
+let _tabCountCache = null;
+function invalidateTabCounts() { _tabCountCache = null; }
+function getTabCounts() {
+  if (!_tabCountCache) {
+    _tabCountCache = {
+      collection: movies.length,
+      watchlist:  loadWatchlist().length,
+      maybe:      loadMaybe().length,
+      meh:        loadMeh().length,
+      banned:     loadBanned().length,
+    };
+  }
+  return _tabCountCache;
 }
+function getTabCount(key) { return getTabCounts()[key] || 0; }
 
 function buildNavButtons(container, compact = false) {
   // Build once, then only update on subsequent calls
@@ -1680,8 +1728,8 @@ function addTexturesToPoster(posterWrap, key) {
 
 function renderWatchlistGrid() {
   const g = getGrid('watchlist');
-  const stds = loadStandards();
-  const list = sortedList(loadWatchlist(), 'watchlist').filter(m => !stds.some(s => s.title === m.title));
+  const standardTitles = new Set(loadStandards().map(m => m.title));
+  const list = sortedList(loadWatchlist(), 'watchlist').filter(m => !standardTitles.has(m.title));
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('watchlist'); return; }
   list.forEach(movie => {
@@ -1747,8 +1795,8 @@ function renderWatchlistGrid() {
 
 function renderBannedGrid() {
   const g = getGrid('banned');
-  const stds = loadStandards();
-  const banned = sortedList(loadBanned(), 'banned').filter(m => !stds.some(s => s.title === m.title));
+  const standardTitles = new Set(loadStandards().map(m => m.title));
+  const banned = sortedList(loadBanned(), 'banned').filter(m => !standardTitles.has(m.title));
   g.innerHTML = '';
   if (!banned.length) { showEmptyState(g); markClean('banned'); return; }
   banned.forEach(movie => {
@@ -1814,8 +1862,8 @@ function renderBannedGrid() {
 
 function renderMaybeGrid() {
   const g = getGrid('maybe');
-  const stds = loadStandards();
-  const list = sortedList(loadMaybe(), 'maybe').filter(m => !stds.some(s => s.title === m.title));
+  const standardTitles = new Set(loadStandards().map(m => m.title));
+  const list = sortedList(loadMaybe(), 'maybe').filter(m => !standardTitles.has(m.title));
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('maybe'); return; }
   list.forEach(movie => {
@@ -1881,8 +1929,8 @@ function renderMaybeGrid() {
 
 function renderMehGrid() {
   const g = getGrid('meh');
-  const stds = loadStandards();
-  const list = sortedList(loadMeh(), 'meh').filter(m => !stds.some(s => s.title === m.title));
+  const standardTitles = new Set(loadStandards().map(m => m.title));
+  const list = sortedList(loadMeh(), 'meh').filter(m => !standardTitles.has(m.title));
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('meh'); return; }
   list.forEach(movie => {
@@ -1948,6 +1996,7 @@ function renderMehGrid() {
 
 function saveMovies() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(movies));
+  invalidateTabCounts();
   if (gridView !== 'collection') markDirty('collection');
 }
 
@@ -1999,12 +2048,8 @@ let darkBoost    = _g.darkBoost    ?? 100;
 function applyGrain() {
   const opacity = grainEnabled ? grainLevel : 0;
   const multiplier = 1 + darkBoost / 100;
-  document.querySelectorAll('.poster-texture-hl').forEach(el => {
-    el.style.opacity = Math.min(1, opacity * multiplier);
-  });
-  document.querySelectorAll('.poster-texture-sh').forEach(el => {
-    el.style.opacity = opacity;
-  });
+  document.documentElement.style.setProperty('--grain-hl', Math.min(1, opacity * multiplier));
+  document.documentElement.style.setProperty('--grain-sh', opacity);
 }
 
 applyGrain();
@@ -2405,6 +2450,11 @@ function renderSearchResults(hits) {
     searchResults.innerHTML = '<div class="search-empty">No results</div>';
     return;
   }
+  // Build title→view map once for O(1) lookups instead of loading all lists per row
+  const titleToView = new Map();
+  Object.keys(VIEW_LOADERS).forEach(v => {
+    VIEW_LOADERS[v]().forEach(x => { if (!titleToView.has(x.title)) titleToView.set(x.title, v); });
+  });
   hits.forEach(m => {
     const row = document.createElement('div');
     row.className = 'search-result-row';
@@ -2434,7 +2484,7 @@ function renderSearchResults(hits) {
     }
 
     const VIEW_LABELS = { collection: 'Collection', watchlist: 'To Watch', maybe: 'Wildcard', meh: 'Meh', banned: "Don't Recommend" };
-    const existingView = Object.keys(VIEW_LOADERS).find(v => VIEW_LOADERS[v]().some(x => x.title === m.title));
+    const existingView = titleToView.get(m.title);
 
     const addBtn = document.createElement('button');
     addBtn.className = 'search-add-btn';

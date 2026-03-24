@@ -1,6 +1,13 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env.local') });
 const Anthropic = require('@anthropic-ai/sdk');
 
+const tasteProfile = (() => {
+  try {
+    const p = require('path').join(__dirname, '..', 'taste-profile.json');
+    return JSON.parse(require('fs').readFileSync(p, 'utf8')).prompt_section || null;
+  } catch { return null; }
+})();
+
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG  = 'https://image.tmdb.org/t/p/';
 
@@ -61,6 +68,9 @@ module.exports = async function handler(req, res) {
     `You are a film recommendation engine. Analyze this curated movie collection and recommend exactly 5 distinct films the curator is missing. Only recommend feature films — never TV series, miniseries, or documentaries.`,
     standardsList
       ? `\n## REFERENCE FILMS\nThese are the curator's all-time favourites and define their taste most precisely. Weight these heavily above all else:\n${standardsList}`
+      : '',
+    tasteProfile
+      ? `\n## TASTE PROFILE\n${tasteProfile}`
       : '',
     `\n## COLLECTION\nListed in curator's personal order — films appearing earlier carry more weight and reflect current taste more strongly:\n${movieList}`,
     excluded.length

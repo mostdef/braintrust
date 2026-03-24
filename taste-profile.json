@@ -1,0 +1,58 @@
+{
+  "updated": "2026-03-22",
+  "version": 1,
+  "signature": "A cinephile built on the American crime canon — Tarantino, Fincher, Scorsese, the Coens — who has expanded outward into institutional procedurals (Spotlight, Margin Call, The Conversation), epic world-building (Dune, Interstellar, Apocalypse Now), and international crime realism (City of God, Gomorrah, Anatomy of a Fall). The taste is masculine in register, obsessed with systems of power and the men who corrupt or are consumed by them, with a high tolerance for moral ambiguity but a hard limit on pure nihilism and shock-as-art.",
+  "prompt_section": "## TASTE PROFILE\n\nThis curator's identity is anchored in: Sicario, The Godfather, Margin Call, Fargo, and Interstellar. Prioritise films where procedural precision, institutional power, and moral rot are inseparable — the kind of storytelling that makes you feel the weight of a system closing in on a person. Think: characters who understand exactly what they're doing and do it anyway.\n\nStrong positive signals: crime films with architectural plotting (L.A. Confidential, No Country for Old Men, Heat); thrillers where information is weaponised (The Conversation, Tinker Tailor Soldier Spy, Zodiac); epics where scale serves character rather than spectacle (There Will Be Blood, Apocalypse Now, The Deer Hunter); international cinema with the same bone structure (City of God, Gomorrah, Cold War, Anatomy of a Fall); and any film in which institutions — financial, political, criminal, familial — are shown to be the actual villain.\n\nTone should lean toward: controlled menace, slow-build dread that pays off, morally compromised protagonists with coherent internal logic, and restrained formal craft over stylistic excess. Director loyalty runs deep (Villeneuve, PTA, Fincher, Coens), but completism in the watchlist shouldn't drive recs — look for genuine gaps.\n\nAvoid: pure horror and shock-escalation (Hereditary is banned; Ari Aster is tolerated only when grounded in something beyond dread). Avoid superhero adjacency even from trusted directors — The Dark Knight is MEH. Avoid quiet intimate domestic drama (Minari is banned, Power of the Dog is MEH). Avoid slow-burn prestige that mistakes inertia for depth (The Assassination of Jesse James is banned; Le Samouraï is MEH). Avoid maximalist auteur confections where style has consumed story (The French Dispatch is MEH).\n\nPrioritise: precise, purposeful films where every scene is load-bearing. When in doubt, ask whether this film would sit comfortably between Sicario and The Social Network on a shelf.",
+  "dimensions": {
+    "gravitational_directors": [
+      "Quentin Tarantino (9 films in collection)",
+      "David Fincher (6 films)",
+      "Martin Scorsese (5 films, but Killers of the Flower Moon is MEH and Silence is MEH — late-period fatigue)",
+      "Denis Villeneuve (5 films across collection and standards, plus deep watchlist pull)",
+      "Joel & Ethan Coen (4 films in collection, 4+ in watchlist)",
+      "Paul Thomas Anderson (1 collection, 5 watchlist — aspirational completism, strongest gap director)",
+      "Sean Baker (3 films — recent sustained investment)",
+      "Ridley Scott (4 films — early Ridley yes, late Ridley unreliable)"
+    ],
+    "dominant_themes": [
+      "Institutional power and its corruption — financial systems (Margin Call, Big Short, Wolf of Wall Street), criminal organisations (Godfather trilogy, Goodfellas, Casino, City of God), political machinery (Spotlight, Munich, Syriana, All the President's Men watchlist)",
+      "Men who make irreversible choices and live inside the consequences",
+      "Procedural obsession — how things actually work, the mechanics of crime, espionage, journalism, capital",
+      "American mythology interrogated — the West (Hateful Eight, True Grit, No Country), Hollywood (Once Upon a Time in Hollywood), the frontier dream (There Will Be Blood, The Brutalist)",
+      "Epic scale grounded in interiority — Dune, Interstellar, Apocalypse Now, 2001",
+      "Moral ambiguity without resolution — the film ends but the rot continues"
+    ],
+    "preferred_tones": [
+      "Controlled menace — threat present but not yet detonated",
+      "Slow-build procedural dread that pays off structurally (Zodiac, Sicario, Tinker Tailor)",
+      "Darkly comic fatalism (Coen Brothers register: No Country, Burn After Reading, Fargo)",
+      "Cold institutional register — Margin Call, The Conversation, The Social Network",
+      "Lyrical violence — Tarantino, Villeneuve, early Refn (Drive is a standard)"
+    ],
+    "formal_tendencies": [
+      "Non-linear or structurally ambitious storytelling — Pulp Fiction, Rashomon (watchlist), Adaptation, Oldboy",
+      "Widescreen cinematography with purposeful negative space",
+      "Score as dread architecture — Hans Zimmer (Interstellar, Dunkirk), Jóhann Jóhannsson (Sicario, Arrival)",
+      "Dialogue-driven scenes where subtext carries lethal weight (Margin Call boardroom, Godfather negotiations)",
+      "Restraint over excess — the camera earns its movements"
+    ],
+    "underrepresented": [
+      "Paul Thomas Anderson deep cuts — The Master, Magnolia, Phantom Thread, Inherent Vice, Punch-Drunk Love all watchlisted",
+      "70s American paranoia thriller — All the President's Men, Three Days of the Condor, The Parallax View, Network all watchlisted",
+      "French and European crime — A Prophet watchlisted, Mesrine watchlisted, Le Samouraï MEH (wants the genre, not that entry point)",
+      "East Asian cinema — Oldboy in collection, Memories of Murder and Burning watchlisted, The Wailing and Cure in maybe; strong appetite for Korean/Japanese genre cinema",
+      "Classical Hollywood and noir — The Killing, Night of the Hunter, Witness for the Prosecution, Ace in the Hole, Rififi all in watchlist/maybe",
+      "Akira Kurosawa — Ran and Rashomon both present in watchlist/maybe",
+      "Australian/Southern Hemisphere crime — The Proposition in maybe"
+    ],
+    "reject_patterns": [
+      "Pure horror / escalating dread without narrative payoff (Hereditary banned, Longlegs banned, Bone Tomahawk MEH)",
+      "Nihilism as endpoint — Sympathy for Mr. Vengeance banned; wants moral complexity, not moral void",
+      "Quiet domestic realism / slow emotional cinema (Minari banned, Power of the Dog MEH, Silence MEH, Mr. Turner MEH, Short Cuts MEH)",
+      "Superhero-adjacent even from trusted auteurs (The Dark Knight MEH)",
+      "Maximalist stylistic excess over story (The French Dispatch MEH, Cosmopolis MEH)",
+      "Slow-burn that mistakes pace for depth (The Assassination of Jesse James banned, Le Samouraï MEH, All Is Lost MEH)",
+      "Gore or physical transgression as the primary aesthetic (Hardcore Henry banned, Bone Tomahawk MEH)"
+    ]
+  }
+}
