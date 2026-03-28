@@ -37,6 +37,7 @@ function renderPreview(snap, container) {
       <span>🎬 ${(snap.movies || []).length} in collection</span>
       <span>🍿 ${(snap.watchlist || []).length} to watch</span>
       <span>🎲 ${(snap.maybe || []).length} wildcard</span>
+      <span>😑 ${(snap.meh || []).length} meh</span>
       <span>👻 ${(snap.banned || []).length} don't recommend</span>
     </div>`;
   container.appendChild(header);
@@ -117,6 +118,7 @@ async function loadServerSnapshots() {
           🎬 ${(snap.movies || []).length} &nbsp;
           🍿 ${(snap.watchlist || []).length} &nbsp;
           🎲 ${(snap.maybe || []).length} &nbsp;
+          😑 ${(snap.meh || []).length} &nbsp;
           👻 ${(snap.banned || []).length}
         </span>`;
 
@@ -181,7 +183,7 @@ renderCostStats();
 
 // ── Card display ──────────────────────────────────────────────────────────────
 const cardRatingsToggle = document.getElementById('card-ratings-toggle');
-cardRatingsToggle.checked = localStorage.getItem(CARD_RATINGS_KEY) !== 'false';
+cardRatingsToggle.checked = localStorage.getItem(CARD_RATINGS_KEY) === 'true';
 cardRatingsToggle.addEventListener('change', () => {
   localStorage.setItem(CARD_RATINGS_KEY, cardRatingsToggle.checked ? 'true' : 'false');
 });
@@ -195,7 +197,10 @@ document.getElementById('save-snapshot-btn').addEventListener('click', async fun
     movies:    JSON.parse(localStorage.getItem(STORAGE_KEY)   || '[]'),
     watchlist: JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]'),
     maybe:     JSON.parse(localStorage.getItem(MAYBE_KEY)     || '[]'),
+    meh:       JSON.parse(localStorage.getItem(MEH_KEY)       || '[]'),
     banned:    JSON.parse(localStorage.getItem(BANNED_KEY)    || '[]'),
+    standards: JSON.parse(localStorage.getItem(STANDARDS_KEY) || '[]'),
+    totalCost: parseFloat(localStorage.getItem(TOTAL_COST_KEY) || '0'),
   };
   try {
     const res = await fetch('/api/snapshot', {
