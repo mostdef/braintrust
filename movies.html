@@ -30,6 +30,61 @@
     <div class="grid" id="grid-banned"    style="display:none"></div>
   </main>
 
+  <!-- Now Watching Widget -->
+  <div id="nww" class="nww nww--idle">
+    <!-- Idle button -->
+    <button class="nww-idle-btn" id="nww-idle-btn">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+    </button>
+
+    <!-- Collapsed pill -->
+    <div class="nww-pill" id="nww-pill">
+      <div class="nww-pill-poster" id="nww-pill-poster"></div>
+      <span class="nww-pill-title" id="nww-pill-title"></span>
+      <span class="nww-pill-time" id="nww-pill-time"></span>
+      <div class="nww-pill-bar"><div class="nww-pill-bar-fill" id="nww-pill-bar-fill"></div></div>
+    </div>
+
+    <!-- Expanded panel -->
+    <div class="nww-panel" id="nww-panel">
+      <!-- Search sub-panel -->
+      <div class="nww-search" id="nww-search">
+        <div class="nww-search-header">Pick a film</div>
+        <input type="text" class="nww-search-input" id="nww-search-input" placeholder="Search by title…" autocomplete="off" spellcheck="false">
+        <div class="nww-quick-picks" id="nww-quick-picks"></div>
+        <div class="nww-search-results" id="nww-search-results"></div>
+      </div>
+
+      <!-- Playing / deciding sub-panel -->
+      <div class="nww-playing" id="nww-playing">
+        <img class="nww-poster" id="nww-poster" src="" alt="">
+        <div class="nww-title" id="nww-title"></div>
+        <div class="nww-meta" id="nww-meta"></div>
+        <div class="nww-progress-wrap" id="nww-progress-wrap">
+          <div class="nww-progress-bar" id="nww-progress-bar">
+            <div class="nww-progress-fill" id="nww-progress-fill"></div>
+          </div>
+          <div class="nww-time-row">
+            <span id="nww-elapsed">0:00</span>
+            <span id="nww-runtime">0:00</span>
+          </div>
+        </div>
+        <div class="nww-controls" id="nww-controls">
+          <button class="nww-btn nww-btn-pause" id="nww-pause-btn">Pause</button>
+          <button class="nww-btn nww-btn-done" id="nww-done-btn">Done</button>
+          <button class="nww-btn nww-btn-abandon" id="nww-abandon-btn">Abandon</button>
+        </div>
+        <div class="nww-decisions" id="nww-decisions" style="display:none">
+          <div class="nww-decisions-label">How was it?</div>
+          <button class="nww-dec-btn nww-dec-collection" id="nww-dec-collection">Collection</button>
+          <button class="nww-dec-btn nww-dec-meh" id="nww-dec-meh">Meh</button>
+          <button class="nww-dec-btn nww-dec-ban" id="nww-dec-ban">Don't Recommend</button>
+        </div>
+        <div class="nww-confirmation" id="nww-confirmation" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="search-modal-backdrop" class="search-modal-backdrop" style="display:none">
     <div class="search-modal">
       <div class="search-modal-header">

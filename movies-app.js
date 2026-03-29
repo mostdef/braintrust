@@ -683,7 +683,7 @@ function render(list) {
 
 const CARD_RATINGS_KEY = 'thecollection_card_ratings';
 function isCardRatingsEnabled() {
-  return localStorage.getItem(CARD_RATINGS_KEY) !== 'false';
+  return localStorage.getItem(CARD_RATINGS_KEY) === 'true';
 }
 
 function appendCardRatings(info, movie) {
@@ -2028,7 +2028,7 @@ initRecHeading();
 fetchRecommendation();
 
 
-setInterval(() => saveSnapshot('Auto-save'), 10 * 60 * 1000);
+setInterval(() => saveSnapshot('Auto-save · ' + new Date().toLocaleString()), 10 * 60 * 1000);
 
 updateSortable('collection');
 
@@ -2165,6 +2165,12 @@ function renderModalDetails(body, movie, data) {
     posterCol.appendChild(ratings);
   }
 
+  const watchBtn = document.createElement('button');
+  watchBtn.className = 'mm-watch-btn';
+  watchBtn.textContent = 'Watch Tonight';
+  watchBtn.addEventListener('click', () => watchTonight(movie, gridView));
+  posterCol.appendChild(watchBtn);
+
   const info = document.createElement('div');
   info.className = 'mm-info';
 
@@ -2293,6 +2299,441 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft')   modalNavigate(-1);
   if (e.key === 'ArrowRight')  modalNavigate(1);
 });
+
+// ── Now Watching Widget ──────────────────────────────────────────────────────
+
+const NOW_WATCHING_KEY = 'thecollection_now_watching';
+
+const nww = {
+  el: document.getElementById('nww'),
+  idleBtn: document.getElementById('nww-idle-btn'),
+  pill: document.getElementById('nww-pill'),
+  pillPoster: document.getElementById('nww-pill-poster'),
+  pillTitle: document.getElementById('nww-pill-title'),
+  pillTime: document.getElementById('nww-pill-time'),
+  pillBarFill: document.getElementById('nww-pill-bar-fill'),
+  panel: document.getElementById('nww-panel'),
+  search: document.getElementById('nww-search'),
+  searchInput: document.getElementById('nww-search-input'),
+  quickPicks: document.getElementById('nww-quick-picks'),
+  searchResults: document.getElementById('nww-search-results'),
+  playing: document.getElementById('nww-playing'),
+  poster: document.getElementById('nww-poster'),
+  title: document.getElementById('nww-title'),
+  meta: document.getElementById('nww-meta'),
+  progressBar: document.getElementById('nww-progress-bar'),
+  progressFill: document.getElementById('nww-progress-fill'),
+  elapsed: document.getElementById('nww-elapsed'),
+  runtime: document.getElementById('nww-runtime'),
+  controls: document.getElementById('nww-controls'),
+  pauseBtn: document.getElementById('nww-pause-btn'),
+  doneBtn: document.getElementById('nww-done-btn'),
+  abandonBtn: document.getElementById('nww-abandon-btn'),
+  decisions: document.getElementById('nww-decisions'),
+  decCollection: document.getElementById('nww-dec-collection'),
+  decMeh: document.getElementById('nww-dec-meh'),
+  decBan: document.getElementById('nww-dec-ban'),
+  confirmation: document.getElementById('nww-confirmation'),
+  interval: null,
+  searchDebounce: null,
+  state: 'idle' // idle | searching | playing | expanded | deciding
+};
+
+function nwwFormatTime(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function nwwParseTime(str) {
+  const parts = str.split(':').map(Number);
+  if (parts.some(isNaN)) return null;
+  if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+  if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
+  if (parts.length === 1) return parts[0] * 60000;
+  return null;
+}
+
+function nwwMakeEditable(el, isRuntime) {
+  el.style.cursor = 'pointer';
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const current = el.textContent;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = current;
+    input.className = 'nww-time-edit';
+    input.style.cssText = 'width:60px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:4px;color:#fff;font-size:11px;font-family:Inter,sans-serif;text-align:center;padding:1px 2px;font-variant-numeric:tabular-nums;';
+    el.replaceWith(input);
+    input.focus();
+    input.select();
+    const commit = () => {
+      const ms = nwwParseTime(input.value);
+      input.replaceWith(el);
+      if (ms === null) return;
+      const data = loadNowWatching();
+      if (!data) return;
+      if (isRuntime) {
+        data.runtime = ms / 60000;
+      } else {
+        data.accumulatedMs = ms;
+        data.startedAt = Date.now();
+        if (data.pausedAt) data.pausedAt = Date.now();
+      }
+      saveNowWatching(data);
+      nwwUpdateDisplay();
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') input.blur(); if (ev.key === 'Escape') { input.value = current; input.blur(); } });
+  });
+}
+
+function nwwGetElapsed(data) {
+  if (!data) return 0;
+  if (data.pausedAt) return data.accumulatedMs;
+  return data.accumulatedMs + (Date.now() - data.startedAt);
+}
+
+function loadNowWatching() {
+  try { return JSON.parse(localStorage.getItem(NOW_WATCHING_KEY)); } catch { return null; }
+}
+
+function saveNowWatching(data) {
+  localStorage.setItem(NOW_WATCHING_KEY, JSON.stringify(data));
+}
+
+function clearNowWatching() {
+  localStorage.removeItem(NOW_WATCHING_KEY);
+}
+
+function nwwSetState(state) {
+  nww.state = state;
+  nww.el.className = 'nww nww--' + state;
+}
+
+function nwwUpdateDisplay() {
+  const data = loadNowWatching();
+  if (!data) return;
+  const elapsedMs = nwwGetElapsed(data);
+  const runtimeMs = (data.runtime || 0) * 60000;
+  const pct = runtimeMs > 0 ? Math.min(100, (elapsedMs / runtimeMs) * 100) : 0;
+
+  // Pill
+  nww.pillTitle.textContent = data.title;
+  nww.pillTime.textContent = nwwFormatTime(elapsedMs) + ' / ' + nwwFormatTime(runtimeMs);
+  nww.pillBarFill.style.width = pct + '%';
+
+  // Expanded panel
+  nww.elapsed.textContent = nwwFormatTime(elapsedMs);
+  nww.runtime.textContent = nwwFormatTime(runtimeMs);
+  nww.progressFill.style.width = pct + '%';
+
+  // Check completion
+  if (runtimeMs > 0 && elapsedMs >= runtimeMs && nww.state === 'playing') {
+    nww.el.classList.add('nww--complete');
+    nwwSetState('expanded');
+    nwwShowDecisions();
+  }
+}
+
+function nwwStartInterval() {
+  nwwStopInterval();
+  nww.interval = setInterval(nwwUpdateDisplay, 1000);
+}
+
+function nwwStopInterval() {
+  if (nww.interval) { clearInterval(nww.interval); nww.interval = null; }
+}
+
+function nwwPopulatePlaying(data) {
+  nww.poster.src = data.poster || '';
+  nww.poster.alt = data.title;
+  nww.title.textContent = data.title;
+  nww.meta.textContent = [data.director, data.year].filter(Boolean).join(' · ');
+  nww.runtime.textContent = nwwFormatTime((data.runtime || 0) * 60000);
+  nww.pillPoster.innerHTML = data.poster ? `<img src="${data.poster}" alt="">` : '';
+  nww.pauseBtn.textContent = data.pausedAt ? 'Resume' : 'Pause';
+  nww.controls.style.display = '';
+  nww.decisions.style.display = 'none';
+  nww.confirmation.style.display = 'none';
+  nww.el.classList.remove('nww--complete');
+}
+
+function nwwShowDecisions() {
+  nww.controls.style.display = 'none';
+  nww.decisions.style.display = '';
+  nwwStopInterval();
+}
+
+function nwwActivate(movie, sourceView) {
+  const runtimeMin = movie.runtime || 0;
+  const data = {
+    title: movie.title, year: movie.year, director: movie.director,
+    poster: movie.poster, runtime: runtimeMin,
+    sourceView: sourceView || 'search',
+    startedAt: Date.now(), pausedAt: null, accumulatedMs: 0
+  };
+  saveNowWatching(data);
+  nwwPopulatePlaying(data);
+  nwwSetState('playing');
+  nwwUpdateDisplay();
+  nwwStartInterval();
+
+  // Fetch runtime if not known
+  if (!runtimeMin && movie.title) {
+    fetch(`/api/movie-details?title=${encodeURIComponent(movie.title)}&year=${encodeURIComponent(movie.year || '')}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.runtime) {
+          const nwData = loadNowWatching();
+          if (nwData && nwData.title === movie.title) {
+            nwData.runtime = parseInt(d.runtime) || 0;
+            saveNowWatching(nwData);
+            nwwUpdateDisplay();
+          }
+        }
+      }).catch(() => {});
+  }
+}
+
+function nwwToIdle() {
+  nwwStopInterval();
+  clearNowWatching();
+  nwwSetState('idle');
+  nww.el.classList.remove('nww--complete');
+}
+
+function nwwCommitDecision(target) {
+  const data = loadNowWatching();
+  if (!data) return;
+  const src = data.sourceView;
+  const title = data.title;
+
+  if (src === 'search') {
+    // Film not in any list — insert directly
+    const entry = { title: data.title, year: data.year, director: data.director, poster: data.poster, addedAt: Date.now() };
+    const targetSavers = {
+      collection: () => { movies.unshift(entry); saveMovies(); },
+      meh: () => { const l = loadMeh(); l.unshift(entry); saveMeh(l); },
+      banned: () => { const l = loadBanned(); l.unshift(entry); saveBanned(l); }
+    };
+    if (targetSavers[target]) targetSavers[target]();
+    invalidateTabCounts();
+    markDirty(target);
+    setGridView(gridView);
+    renderGridNav();
+  } else {
+    // Film already in a list — use moveBetweenViews
+    if (target === 'collection' && src !== 'collection') moveBetweenViews(title, src, 'collection');
+    else if (target === 'meh' && src !== 'meh') moveBetweenViews(title, src, 'meh');
+    else if (target === 'banned' && src !== 'banned') moveBetweenViews(title, src, 'banned');
+    setGridView(gridView);
+    renderGridNav();
+  }
+
+  nwwStopInterval();
+  clearNowWatching();
+
+  // Show confirmation
+  const labels = { collection: 'Collection', meh: 'Meh', banned: "Don't Recommend" };
+  nww.decisions.style.display = 'none';
+  nww.controls.style.display = 'none';
+  nww.confirmation.textContent = 'Added to ' + (labels[target] || target);
+  nww.confirmation.style.display = '';
+  nwwSetState('deciding');
+
+  setTimeout(nwwToIdle, 2000);
+}
+
+// Quick picks: 5 most recent watchlist items
+function nwwRenderQuickPicks() {
+  nww.quickPicks.innerHTML = '';
+  const wl = loadWatchlist();
+  const picks = wl.slice(0, 5);
+  if (!picks.length) return;
+  picks.forEach(m => {
+    const btn = document.createElement('button');
+    btn.className = 'nww-quick-pick';
+    btn.innerHTML = `
+      <div class="nww-quick-pick-poster">${m.poster ? `<img src="${m.poster}" alt="">` : ''}</div>
+      <div class="nww-quick-pick-info">
+        <span class="nww-quick-pick-title">${m.title}</span>
+        <span class="nww-quick-pick-year">${m.year || ''}</span>
+      </div>`;
+    btn.addEventListener('click', () => nwwSelectSearchResult(m, 'watchlist'));
+    nww.quickPicks.appendChild(btn);
+  });
+}
+
+function nwwSelectSearchResult(movie, sourceView) {
+  nwwActivate(movie, sourceView || 'search');
+}
+
+// Widget search
+let nwwSearchDebounce = null;
+nww.searchInput.addEventListener('input', () => {
+  clearTimeout(nwwSearchDebounce);
+  const q = nww.searchInput.value.trim();
+  if (q.length < 2) { nww.searchResults.innerHTML = ''; return; }
+  nww.searchResults.innerHTML = '<div class="nww-search-empty">Searching…</div>';
+  nwwSearchDebounce = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/search-movie?q=${encodeURIComponent(q)}`);
+      const hits = await res.json();
+      nww.searchResults.innerHTML = '';
+      if (!hits.length) {
+        nww.searchResults.innerHTML = '<div class="nww-search-empty">No results</div>';
+        return;
+      }
+      hits.slice(0, 6).forEach(m => {
+        const row = document.createElement('button');
+        row.className = 'nww-search-row';
+        row.innerHTML = `
+          <div class="nww-quick-pick-poster">${m.poster ? `<img src="${m.poster}" alt="">` : ''}</div>
+          <div class="nww-quick-pick-info">
+            <span class="nww-quick-pick-title">${m.title}</span>
+            <span class="nww-quick-pick-year">${m.year || ''}</span>
+          </div>`;
+        row.addEventListener('click', () => nwwSelectSearchResult(m, 'search'));
+        nww.searchResults.appendChild(row);
+      });
+    } catch {
+      nww.searchResults.innerHTML = '<div class="nww-search-empty">Search failed</div>';
+    }
+  }, 300);
+});
+
+// Event listeners
+nww.idleBtn.addEventListener('click', () => {
+  nwwRenderQuickPicks();
+  nww.searchInput.value = '';
+  nww.searchResults.innerHTML = '';
+  nwwSetState('searching');
+  setTimeout(() => nww.searchInput.focus(), 50);
+});
+
+nww.pill.addEventListener('click', () => {
+  const data = loadNowWatching();
+  if (!data) return;
+  nwwPopulatePlaying(data);
+  nwwSetState('expanded');
+  nwwUpdateDisplay();
+});
+
+nww.pauseBtn.addEventListener('click', () => {
+  const data = loadNowWatching();
+  if (!data) return;
+  if (data.pausedAt) {
+    // Resume
+    data.accumulatedMs += Date.now() - data.pausedAt;
+    data.startedAt = Date.now();
+    data.pausedAt = null;
+    nww.pauseBtn.textContent = 'Pause';
+    saveNowWatching(data);
+    nwwStartInterval();
+  } else {
+    // Pause
+    data.accumulatedMs = nwwGetElapsed(data);
+    data.pausedAt = Date.now();
+    data.startedAt = Date.now();
+    nww.pauseBtn.textContent = 'Resume';
+    saveNowWatching(data);
+    nwwStopInterval();
+    nwwUpdateDisplay();
+  }
+});
+
+nww.doneBtn.addEventListener('click', () => {
+  nwwSetState('deciding');
+  nwwShowDecisions();
+  nwwUpdateDisplay();
+});
+
+nww.abandonBtn.addEventListener('click', nwwToIdle);
+
+nww.decCollection.addEventListener('click', () => nwwCommitDecision('collection'));
+nww.decMeh.addEventListener('click', () => nwwCommitDecision('meh'));
+nww.decBan.addEventListener('click', () => nwwCommitDecision('banned'));
+
+nwwMakeEditable(nww.elapsed, false);
+nwwMakeEditable(nww.runtime, true);
+
+// Scrub: click on progress bar to jump
+nww.progressBar.addEventListener('click', (e) => {
+  const data = loadNowWatching();
+  if (!data || !data.runtime) return;
+  const rect = nww.progressBar.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const runtimeMs = data.runtime * 60000;
+  data.accumulatedMs = Math.round(pct * runtimeMs);
+  data.startedAt = Date.now();
+  if (data.pausedAt) data.pausedAt = Date.now();
+  saveNowWatching(data);
+  nwwUpdateDisplay();
+});
+
+// Click outside panel to collapse
+document.addEventListener('click', (e) => {
+  if (nww.state === 'expanded' || nww.state === 'searching') {
+    if (!nww.el.contains(e.target)) {
+      const data = loadNowWatching();
+      if (data && nww.state === 'expanded') {
+        nwwSetState('playing');
+      } else if (nww.state === 'searching') {
+        nwwSetState('idle');
+      }
+    }
+  }
+});
+
+// watchTonight: called from movie modal's Watch Tonight button
+function watchTonight(movie, sourceView) {
+  closeMovieModal();
+  const runtimeMin = movie.runtime || 0;
+  nwwActivate({ ...movie, runtime: runtimeMin }, sourceView);
+
+  // Always fetch runtime to ensure we have it
+  if (movie.title) {
+    fetch(`/api/movie-details?title=${encodeURIComponent(movie.title)}&year=${encodeURIComponent(movie.year || '')}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.runtime) {
+          const nwData = loadNowWatching();
+          if (nwData && nwData.title === movie.title) {
+            nwData.runtime = parseInt(d.runtime) || nwData.runtime;
+            saveNowWatching(nwData);
+            nwwUpdateDisplay();
+          }
+        }
+      }).catch(() => {});
+  }
+}
+
+// Restore on page load
+(function nwwRestore() {
+  const data = loadNowWatching();
+  if (!data) return;
+  nwwPopulatePlaying(data);
+  const elapsedMs = nwwGetElapsed(data);
+  const runtimeMs = (data.runtime || 0) * 60000;
+
+  if (runtimeMs > 0 && elapsedMs >= runtimeMs) {
+    nww.el.classList.add('nww--complete');
+    nwwSetState('expanded');
+    nwwShowDecisions();
+  } else if (data.pausedAt) {
+    nwwSetState('playing');
+    nwwUpdateDisplay();
+  } else {
+    nwwSetState('playing');
+    nwwUpdateDisplay();
+    nwwStartInterval();
+  }
+})();
 
 // ── Context menu ─────────────────────────────────────────────────────────────
 const CTX_VIEW_LABELS = { collection: 'Collection', watchlist: 'To Watch', maybe: 'Wildcard', meh: 'Meh', banned: 'Banned' };
