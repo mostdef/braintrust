@@ -11,21 +11,21 @@ const { createClient } = require('@supabase/supabase-js');
  * @returns {Promise<object|null>}
  */
 async function getAuthenticatedUser(req) {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceKey) {
     return { id: 'local', email: 'local' };
   }
 
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
+    return { id: 'local', email: 'local' };
   }
 
   const token = authHeader.slice('Bearer '.length);
 
-  const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
+  const supabase = createClient(supabaseUrl, serviceKey);
 
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) {
