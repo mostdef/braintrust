@@ -666,7 +666,7 @@ function render(list) {
 
     const meta = document.createElement('span');
     meta.className = 'card-trade';
-    meta.textContent = `${movie.director}, ${movie.year}`;
+    meta.textContent = [movie.director, movie.year].filter(Boolean).join(', ');
 
     info.appendChild(title);
     info.appendChild(meta);
@@ -1068,7 +1068,7 @@ function renderRecommendation() {
 
   const meta = document.createElement('span');
   meta.className = 'rec-meta';
-  meta.textContent = `${rec.director}, ${rec.year}`;
+  meta.textContent = [rec.director, rec.year].filter(Boolean).join(', ');
 
   const reason = document.createElement('p');
   reason.className = 'rec-reason';
@@ -1779,7 +1779,7 @@ function renderWatchlistGrid() {
 
     const meta = document.createElement('span');
     meta.className = 'card-trade';
-    meta.textContent = `${movie.director}, ${movie.year}`;
+    meta.textContent = [movie.director, movie.year].filter(Boolean).join(', ');
 
     info.appendChild(title);
     info.appendChild(meta);
@@ -1846,7 +1846,7 @@ function renderBannedGrid() {
 
     const meta = document.createElement('span');
     meta.className = 'card-trade';
-    meta.textContent = `${movie.director}, ${movie.year}`;
+    meta.textContent = [movie.director, movie.year].filter(Boolean).join(', ');
 
     info.appendChild(title);
     info.appendChild(meta);
@@ -1913,7 +1913,7 @@ function renderMaybeGrid() {
 
     const meta = document.createElement('span');
     meta.className = 'card-trade';
-    meta.textContent = `${movie.director}, ${movie.year}`;
+    meta.textContent = [movie.director, movie.year].filter(Boolean).join(', ');
 
     info.appendChild(title);
     info.appendChild(meta);
@@ -1980,7 +1980,7 @@ function renderMehGrid() {
 
     const meta = document.createElement('span');
     meta.className = 'card-trade';
-    meta.textContent = `${movie.director}, ${movie.year}`;
+    meta.textContent = [movie.director, movie.year].filter(Boolean).join(', ');
 
     info.appendChild(title);
     info.appendChild(meta);
@@ -2089,7 +2089,7 @@ function openMovieModal(movie, list = null) {
     </div>
     <div class="mm-info">
       <div class="mm-title">${movie.title}</div>
-      <div class="mm-meta">${movie.director} · ${movie.year}</div>
+      <div class="mm-meta">${[movie.director, movie.year].filter(Boolean).join(' · ')}</div>
       <div class="mm-genres">
         <div class="mm-loading-bar mm-skel-tag"></div>
         <div class="mm-loading-bar mm-skel-tag"></div>
@@ -2413,6 +2413,11 @@ function clearNowWatching() {
 function nwwSetState(state) {
   nww.state = state;
   nww.el.className = 'nww nww--' + state;
+  // Add paused modifier when playing but paused
+  const data = loadNowWatching();
+  if (state === 'playing' && data && data.pausedAt) {
+    nww.el.classList.add('nww--paused');
+  }
 }
 
 function nwwUpdateDisplay() {
@@ -2452,6 +2457,19 @@ function nwwStopInterval() {
 function nwwPopulatePlaying(data) {
   nww.poster.src = data.poster || '';
   nww.poster.alt = data.title;
+  // Apply fold texture to poster
+  const wrap = document.getElementById('nww-poster-wrap');
+  wrap.querySelectorAll('.poster-texture').forEach(el => el.remove());
+  const texKey = 'nww_' + (data.title || '');
+  const tex = getCachedTextures(texKey);
+  const hlDiv = document.createElement('div');
+  hlDiv.className = 'poster-texture poster-texture-hl';
+  hlDiv.style.backgroundImage = `url(${tex.hl})`;
+  const shDiv = document.createElement('div');
+  shDiv.className = 'poster-texture poster-texture-sh';
+  shDiv.style.backgroundImage = `url(${tex.sh})`;
+  wrap.appendChild(hlDiv);
+  wrap.appendChild(shDiv);
   nww.title.textContent = data.title;
   nww.meta.textContent = [data.director, data.year].filter(Boolean).join(' · ');
   nww.runtime.textContent = nwwFormatTime((data.runtime || 0) * 60000);
@@ -2544,6 +2562,9 @@ function nwwCommitDecision(target) {
   nww.controls.style.display = 'none';
   nww.confirmation.textContent = 'Added to ' + (labels[target] || target);
   nww.confirmation.style.display = '';
+  nww.confirmation.style.animation = 'none';
+  nww.confirmation.offsetHeight; // force reflow to restart animation
+  nww.confirmation.style.animation = '';
   nwwSetState('deciding');
 
   setTimeout(nwwToIdle, 2000);
@@ -2555,7 +2576,7 @@ function nwwRenderQuickPicks() {
   const wl = loadWatchlist();
   const picks = wl.slice(0, 5);
   if (!picks.length) return;
-  picks.forEach(m => {
+  picks.forEach((m, i) => {
     const btn = document.createElement('button');
     btn.className = 'nww-quick-pick';
     btn.innerHTML = `
@@ -2564,6 +2585,7 @@ function nwwRenderQuickPicks() {
         <span class="nww-quick-pick-title">${m.title}</span>
         <span class="nww-quick-pick-year">${m.year || ''}</span>
       </div>`;
+    btn.style.animationDelay = (i * 40) + 'ms';
     btn.addEventListener('click', () => nwwSelectSearchResult(m, 'watchlist'));
     nww.quickPicks.appendChild(btn);
   });
@@ -2633,6 +2655,7 @@ nww.pauseBtn.addEventListener('click', () => {
     data.startedAt = Date.now();
     data.pausedAt = null;
     nww.pauseBtn.textContent = 'Pause';
+    nww.el.classList.remove('nww--paused');
     saveNowWatching(data);
     nwwStartInterval();
   } else {
@@ -2641,6 +2664,7 @@ nww.pauseBtn.addEventListener('click', () => {
     data.pausedAt = Date.now();
     data.startedAt = Date.now();
     nww.pauseBtn.textContent = 'Resume';
+    nww.el.classList.add('nww--paused');
     saveNowWatching(data);
     nwwStopInterval();
     nwwUpdateDisplay();
@@ -2653,7 +2677,7 @@ nww.doneBtn.addEventListener('click', () => {
   nwwUpdateDisplay();
 });
 
-nww.abandonBtn.addEventListener('click', nwwToIdle);
+nww.abandonBtn.addEventListener('click', () => nwwCommitDecision('banned'));
 
 nww.decCollection.addEventListener('click', () => nwwCommitDecision('collection'));
 nww.decMeh.addEventListener('click', () => nwwCommitDecision('meh'));
@@ -2727,6 +2751,7 @@ function watchTonight(movie, sourceView) {
     nwwShowDecisions();
   } else if (data.pausedAt) {
     nwwSetState('playing');
+    nww.el.classList.add('nww--paused');
     nwwUpdateDisplay();
   } else {
     nwwSetState('playing');

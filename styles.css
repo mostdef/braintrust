@@ -2233,13 +2233,22 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: color 0.2s, border-color 0.2s, box-shadow 0.3s, transform 0.2s cubic-bezier(0.23, 1, 0.32, 1);
   box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  animation: nww-breathe 4s ease-in-out infinite;
 }
 .nww-idle-btn:hover {
   border-color: rgba(255,255,255,0.2);
   color: rgba(255,255,255,0.85);
   box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  animation: none;
+}
+.nww-idle-btn:active {
+  transform: scale(0.92);
+}
+@keyframes nww-breathe {
+  0%, 100% { box-shadow: 0 4px 16px rgba(0,0,0,0.4); border-color: rgba(255,255,255,0.08); }
+  50% { box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 20px rgba(255,215,0,0.18); border-color: rgba(255,215,0,0.15); }
 }
 
 /* Collapsed pill */
@@ -2257,6 +2266,23 @@ main {
   cursor: pointer;
   position: relative;
   overflow: hidden;
+  transition: box-shadow 0.3s, border-color 0.3s;
+}
+.nww-pill:hover {
+  border-color: rgba(255,255,255,0.14);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
+  animation: none;
+}
+.nww--playing .nww-pill {
+  animation: nww-pill-breathe 4s ease-in-out infinite;
+}
+.nww--expanded .nww-panel,
+.nww--deciding .nww-panel {
+  animation: nww-panel-in 0.25s cubic-bezier(0.23, 1, 0.32, 1) both, nww-pill-breathe 4s ease-in-out 0.25s infinite;
+}
+@keyframes nww-pill-breathe {
+  0%, 100% { box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 12px rgba(255,215,0,0.08); border-color: rgba(255,215,0,0.06); }
+  50% { box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 32px 8px rgba(255,215,0,0.2); border-color: rgba(255,215,0,0.18); }
 }
 .nww-pill-poster {
   width: 32px;
@@ -2265,6 +2291,19 @@ main {
   overflow: hidden;
   flex-shrink: 0;
   background: #333;
+  box-shadow: 0 0 0 0 rgba(255,255,255,0);
+  transition: box-shadow 0.6s;
+}
+.nww--playing .nww-pill-poster {
+  animation: nww-poster-glow 3s ease-in-out infinite;
+}
+.nww--paused .nww-pill-poster {
+  animation: none;
+  opacity: 0.6;
+}
+@keyframes nww-poster-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(255,255,255,0.08); }
+  50% { box-shadow: 0 0 12px rgba(255,255,255,0.25); }
 }
 .nww-pill-poster img {
   width: 100%;
@@ -2298,7 +2337,7 @@ main {
 .nww-pill-bar-fill {
   height: 100%;
   width: 0%;
-  background: rgba(255,255,255,0.35);
+  background: linear-gradient(90deg, rgba(255,255,255,0.25), rgba(255,215,0,0.5));
   transition: none;
 }
 
@@ -2313,6 +2352,11 @@ main {
   padding: 20px;
   flex-direction: column;
   gap: 12px;
+  transform-origin: bottom right;
+}
+@keyframes nww-panel-in {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 /* Search sub-panel */
@@ -2391,13 +2435,43 @@ main {
 .nww-search-empty { font-size: 12px; color: rgba(255,255,255,0.3); padding: 8px; }
 
 /* Playing sub-panel */
-.nww-playing { display: none; flex-direction: column; align-items: center; gap: 10px; }
+.nww-playing { display: none; flex-direction: column; align-items: center; gap: 10px; overflow: visible; }
+.nww-poster-wrap {
+  position: relative;
+  width: 120px;
+  height: 180px;
+  flex-shrink: 0;
+  overflow: visible;
+  margin-bottom: 8px;
+}
 .nww-poster {
   width: 120px;
   height: 180px;
   border-radius: 6px;
   object-fit: cover;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  position: relative;
+  z-index: 1;
+  transform: translateY(-4px);
+  box-shadow:
+    0 12px 32px rgba(0,0,0,0.5),
+    0 4px 12px rgba(0,0,0,0.3);
+}
+.nww-poster-wrap .poster-texture {
+  z-index: 2;
+  border-radius: 6px;
+  transform: translateY(-4px);
+}
+.nww-poster-glow {
+  position: absolute;
+  inset: -20px;
+  background: radial-gradient(ellipse at center, rgba(255,215,0,0.5) 0%, rgba(255,165,0,0.3) 40%, transparent 70%);
+  filter: blur(20px);
+  z-index: 0;
+  animation: nww-glow-breathe 4s ease-in-out infinite;
+}
+@keyframes nww-glow-breathe {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
 }
 .nww-title {
   font-family: 'Playfair Display', Georgia, serif;
@@ -2425,7 +2499,7 @@ main {
 .nww-progress-fill {
   height: 100%;
   width: 0%;
-  background: rgba(255,255,255,0.4);
+  background: linear-gradient(90deg, rgba(255,255,255,0.3), rgba(255,215,0,0.55));
   border-radius: 3px;
   transition: none;
 }
@@ -2453,14 +2527,16 @@ main {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: color 0.15s, border-color 0.15s, transform 0.1s;
 }
 .nww-btn:hover {
   border-color: rgba(255,255,255,0.25);
   color: rgba(255,255,255,0.9);
 }
+.nww-btn:active { transform: scale(0.96); }
 .nww-btn-done { border-color: rgba(255,255,255,0.15); }
-.nww-btn-abandon { color: rgba(255,255,255,0.3); }
+.nww-btn-abandon { color: rgba(204,85,85,0.7); border-color: rgba(204,85,85,0.2); }
+.nww-btn-abandon:hover { color: rgba(204,85,85,1); border-color: rgba(204,85,85,0.4); background: rgba(204,85,85,0.06); }
 
 /* Decisions */
 .nww-decisions {
@@ -2490,17 +2566,33 @@ main {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: color 0.15s, border-color 0.2s, background 0.2s, transform 0.1s;
 }
-.nww-dec-btn:hover {
-  border-color: rgba(255,255,255,0.25);
+.nww-dec-btn:active { transform: scale(0.97); }
+.nww-dec-collection:hover {
+  border-color: rgba(255,215,0,0.4);
   color: #fff;
+  background: rgba(255,215,0,0.06);
+}
+.nww-dec-meh:hover {
+  border-color: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.8);
+}
+.nww-dec-ban:hover {
+  border-color: rgba(204,85,85,0.35);
+  color: rgba(255,255,255,0.85);
+  background: rgba(204,85,85,0.06);
 }
 .nww-confirmation {
   font-size: 13px;
-  color: rgba(255,255,255,0.6);
+  color: rgba(255,215,0,0.8);
   text-align: center;
   padding: 8px 0;
+  animation: nww-confirm-in 0.3s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@keyframes nww-confirm-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* State visibility */
@@ -2510,7 +2602,7 @@ main {
 
 .nww--searching .nww-idle-btn { display: none; }
 .nww--searching .nww-pill { display: none; }
-.nww--searching .nww-panel { display: flex; }
+.nww--searching .nww-panel { display: flex; animation: nww-panel-in 0.25s cubic-bezier(0.23, 1, 0.32, 1) both; }
 .nww--searching .nww-search { display: flex; }
 .nww--searching .nww-playing { display: none; }
 
@@ -2521,26 +2613,75 @@ main {
 
 .nww--expanded .nww-idle-btn { display: none; }
 .nww--expanded .nww-pill { display: none; }
-.nww--expanded .nww-panel { display: flex; }
+.nww--expanded .nww-panel { display: flex; animation: nww-panel-in 0.25s cubic-bezier(0.23, 1, 0.32, 1) both; }
 .nww--expanded .nww-search { display: none; }
 .nww--expanded .nww-playing { display: flex; }
 
 .nww--deciding .nww-idle-btn { display: none; }
 .nww--deciding .nww-pill { display: none; }
-.nww--deciding .nww-panel { display: flex; }
+.nww--deciding .nww-panel { display: flex; animation: nww-panel-in 0.25s cubic-bezier(0.23, 1, 0.32, 1) both; }
 .nww--deciding .nww-search { display: none; }
 .nww--deciding .nww-playing { display: flex; }
 
 /* Pulse animation for completion */
 @keyframes nww-pulse {
-  0%, 100% { box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
-  50% { box-shadow: 0 8px 32px rgba(255,255,255,0.12); }
+  0%, 100% { box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 0 rgba(255,215,0,0); }
+  50% { box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 24px rgba(255,215,0,0.3); }
 }
 .nww--complete .nww-pill {
-  animation: nww-pulse 2s ease-in-out infinite;
+  animation: nww-pulse 2.5s ease-in-out infinite;
+  border-color: rgba(255,215,0,0.2);
 }
 .nww--complete .nww-pill-bar-fill {
-  background: rgba(255,255,255,0.6);
+  background: linear-gradient(90deg, rgba(255,215,0,0.5), rgba(255,215,0,0.7));
+}
+
+/* Paused state — dimmed pill */
+.nww--paused .nww-pill {
+  opacity: 0.7;
+  transition: opacity 0.4s;
+}
+.nww--paused .nww-pill-time {
+  color: rgba(255,255,255,0.25);
+}
+
+/* Poster entrance in expanded panel */
+.nww--expanded .nww-poster-wrap,
+.nww--deciding .nww-poster-wrap {
+  animation: nww-poster-in 0.35s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@keyframes nww-poster-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Quick pick stagger entrance */
+.nww-quick-pick {
+  animation: nww-pick-in 0.2s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes nww-pick-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .nww-idle-btn { animation: none !important; }
+  .nww--searching .nww-panel,
+  .nww--expanded .nww-panel,
+  .nww--deciding .nww-panel { animation: none !important; }
+  .nww--expanded .nww-poster-wrap,
+  .nww--deciding .nww-poster-wrap { animation: none !important; }
+  .nww-poster { animation: none !important; }
+  .nww-poster-glow { animation: none !important; }
+  .nww-confirmation { animation: none !important; }
+  .nww-quick-pick { animation: none !important; }
+  .nww--playing .nww-pill { animation: none !important; }
+  .nww--complete .nww-pill { animation: none !important; }
+  .nww--playing .nww-pill-poster { animation: none !important; }
+  .nww-btn:active, .nww-dec-btn:active { transform: none !important; }
+  .nww-idle-btn:active { transform: none !important; }
 }
 
 /* Mobile */

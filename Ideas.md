@@ -14,6 +14,9 @@
 - Incorporate watching frequency/velocity into taste profile
 - "Watch tonight" suggestions based on mood/time available (filter by runtime)
 
+## Visual & Theme
+- Dark mode option (the grain textures, diffraction effects, and film-journal atmosphere would deepen in dark mode — keep light as default, dark as toggle)
+
 ## General
 - PWA / mobile support for logging on the couch
 - Push notification reminder: "You added X to watchlist 2 weeks ago"

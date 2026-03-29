@@ -1,7 +1,9 @@
 # The Collection — Project Guide
 
 ## Overview
-Personal movie collection and recommendation app. Vanilla JS/HTML/CSS, no build system. Deployed on Vercel with serverless API functions.
+A personal film curation tool for reflective movie watching practice. Not a streaming app or social network — a personal archive where a cinephile deepens understanding of their own taste through deliberate selection, real-time watching companionship, and AI-assisted reflection. Vanilla JS/HTML/CSS, no build system. Deployed on Vercel with serverless API functions.
+
+**Design context**: See `.impeccable.md` for brand personality, aesthetic direction, and design principles.
 
 **Dev:** `vercel dev` (runs browser-sync + API functions locally)
 
