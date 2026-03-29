@@ -12,44 +12,56 @@ const TMDB_BASE    = 'https://api.themoviedb.org/3';
 const TMDB_HEADERS = { Authorization: `Bearer ${process.env.TMDB_TOKEN}` };
 const SNAPSHOT_DIR = path.join(__dirname, '..', 'snapshots');
 
-async function fetchRatings(title, year) {
-  const url = `${TMDB_BASE}/search/movie?query=${encodeURIComponent(title)}&year=${year || ''}&language=en-US`;
-  const searchRes = await fetch(url, { headers: TMDB_HEADERS });
-  const search = await searchRes.json();
-  const tmdbMovie = search.results?.[0];
-  if (!tmdbMovie) return { imdb_id: null, imdb_rating: null, rt_score: null };
+async function fetchRatings(title, year, existingImdbId) {
+  let imdbId = existingImdbId || null;
 
-  const detRes = await fetch(`${TMDB_BASE}/movie/${tmdbMovie.id}?language=en-US`, { headers: TMDB_HEADERS });
-  const det = await detRes.json();
-  const imdbId = det.imdb_id || null;
-  if (!imdbId) return { imdb_id: null, imdb_rating: null, rt_score: null };
+  // Only hit TMDB if we don't already have an IMDb ID
+  if (!imdbId) {
+    const url = `${TMDB_BASE}/search/movie?query=${encodeURIComponent(title)}&year=${year || ''}&language=en-US`;
+    const searchRes = await fetch(url, { headers: TMDB_HEADERS });
+    const search = await searchRes.json();
+    const tmdbMovie = search.results?.[0];
+    if (!tmdbMovie) return { imdb_id: null, imdb_rating: null, rt_score: null, director: null };
+
+    const detRes = await fetch(`${TMDB_BASE}/movie/${tmdbMovie.id}?language=en-US`, { headers: TMDB_HEADERS });
+    const det = await detRes.json();
+    imdbId = det.imdb_id || null;
+    if (!imdbId) return { imdb_id: null, imdb_rating: null, rt_score: null, director: null };
+  }
 
   const omdbRes = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${process.env.OMDB_KEY}`);
   const omdb = await omdbRes.json();
-  if (omdb.Response !== 'True') return { imdb_id: imdbId, imdb_rating: null, rt_score: null };
+  if (omdb.Response !== 'True') return { imdb_id: imdbId, imdb_rating: null, rt_score: null, director: null };
 
   const rt = omdb.Ratings?.find(r => r.Source === 'Rotten Tomatoes');
   return {
     imdb_id:     imdbId,
     imdb_rating: omdb.imdbRating !== 'N/A' ? omdb.imdbRating : null,
     rt_score:    rt ? rt.Value : null,
+    director:    omdb.Director && omdb.Director !== 'N/A' ? omdb.Director : null,
   };
 }
 
 async function enrichList(list, label) {
   const results = [];
   for (const movie of list) {
-    // Skip if already fully enriched
-    if (movie.imdb_id && movie.imdb_rating && movie.rt_score) {
+    // Skip if already fully enriched (ratings + director)
+    if (movie.imdb_id && movie.imdb_rating && movie.rt_score && movie.director) {
       process.stdout.write(`  [skip] ${movie.title}\n`);
       results.push(movie);
       continue;
     }
     process.stdout.write(`  ${movie.title} (${movie.year})… `);
     try {
-      const ratings = await fetchRatings(movie.title, movie.year);
-      results.push({ ...movie, ...ratings });
-      console.log(`IMDb ${ratings.imdb_rating || '—'}  RT ${ratings.rt_score || '—'}`);
+      const data = await fetchRatings(movie.title, movie.year, movie.imdb_id);
+      // Only overwrite fields that are missing — don't clobber existing values
+      const merged = { ...movie };
+      if (!merged.imdb_id && data.imdb_id)       merged.imdb_id = data.imdb_id;
+      if (!merged.imdb_rating && data.imdb_rating) merged.imdb_rating = data.imdb_rating;
+      if (!merged.rt_score && data.rt_score)       merged.rt_score = data.rt_score;
+      if (!merged.director && data.director)       merged.director = data.director;
+      results.push(merged);
+      console.log(`IMDb ${data.imdb_rating || '—'}  RT ${data.rt_score || '—'}  Dir ${data.director || '—'}`);
     } catch (e) {
       console.log(`ERROR: ${e.message}`);
       results.push(movie);

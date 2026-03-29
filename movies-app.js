@@ -2948,6 +2948,20 @@ function renderSearchResults(hits) {
       renderGridNav();
       applyGrain();
       closeSearchModal();
+      // Backfill director from movie details API
+      fetch(`/api/movie-details?title=${encodeURIComponent(m.title)}&year=${encodeURIComponent(m.year || '')}`)
+        .then(r => r.json())
+        .then(d => {
+          if (!d.director) return;
+          const curr = VIEW_LOADERS[view]();
+          const entry = curr.find(x => x.title === m.title);
+          if (entry && !entry.director) {
+            entry.director = d.director;
+            VIEW_SAVERS[view](curr);
+            VIEW_RENDERERS[view]();
+            applyGrain();
+          }
+        }).catch(() => {});
     };
 
     if (!existingView) addBtn.addEventListener('click', doAdd);

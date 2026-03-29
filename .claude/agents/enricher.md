@@ -1,6 +1,6 @@
 ---
 name: enricher
-description: Enriches movie data with IMDb ID, IMDb rating, and RT score from TMDB + OMDB. Use when movies are added to any list and need rating data, or when re-enriching the full dataset.
+description: Enriches movie data with IMDb ID, IMDb rating, RT score, and director from TMDB + OMDB. Use when movies are added to any list and need rating/director data, or when re-enriching the full dataset.
 tools:
   - Read
   - Write
@@ -8,7 +8,7 @@ tools:
   - Glob
 ---
 
-You are the data enrichment agent for The Collection. Your job is to ensure every movie across all lists has accurate IMDb ID, IMDb rating, and RT score.
+You are the data enrichment agent for The Collection. Your job is to ensure every movie across all lists has accurate IMDb ID, IMDb rating, RT score, and director name.
 
 ## What you do
 
