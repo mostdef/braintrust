@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card — The Collection Sandbox</title>
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@800&family=Oswald:wght@700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      background: #0e0e0e;
+      margin: 0;
+      font-family: Inter, sans-serif;
+      color: #ccc;
+    }
+
+    .sb-header {
+      padding: 20px 32px 16px;
+      border-bottom: 1px solid #1e1e1e;
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+    }
+
+    .sb-breadcrumb {
+      font-size: 11px;
+      color: #444;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .sb-header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: -0.02em;
+    }
+
+    .sb-header p {
+      margin: 0;
+      font-size: 12px;
+      color: #555;
+    }
+
+    /* Controls section */
+    .sb-controls {
+      padding: 16px 32px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .sb-controls-card {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .sb-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .sb-control label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #555;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .sb-control select {
+      font-family: Inter, sans-serif;
+      font-size: 12px;
+      padding: 4px 8px;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      background: #181818;
+      color: #ccc;
+      cursor: pointer;
+    }
+
+    .sb-control input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+      accent-color: #ffd700;
+    }
+
+    .sb-divider {
+      width: 1px;
+      height: 24px;
+      background: #222;
+    }
+
+    /* Interactive preview section */
+    .sb-interactive {
+      padding: 24px 32px 32px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .sb-section-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #444;
+      margin-bottom: 16px;
+    }
+
+    .sb-card-slot {
+      width: 180px;
+    }
+
+    /* Gallery section */
+    .sb-gallery {
+      padding: 24px 32px 80px;
+    }
+
+    .sb-gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 32px;
+    }
+
+    .sb-gallery-item {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .sb-item-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #444;
+      line-height: 1.6;
+    }
+
+    .sb-item-label strong {
+      display: block;
+      color: #888;
+      font-weight: 600;
+    }
+
+    .sb-card-wrap {
+      width: 180px;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="sb-header">
+    <span class="sb-breadcrumb"><a href="./index.html" style="color:inherit;text-decoration:none">The Collection / Sandbox</a></span>
+    <h1>Card Component</h1>
+    <p>CardComponent.renderCard — all views and states</p>
+  </header>
+
+  <section class="sb-controls">
+    <div class="sb-controls-card">
+      <div class="sb-control">
+        <label for="ctrl-view">View</label>
+        <select id="ctrl-view">
+          <option value="collection">collection</option>
+          <option value="watchlist">watchlist</option>
+          <option value="maybe">maybe</option>
+          <option value="meh">meh</option>
+          <option value="banned">banned</option>
+        </select>
+      </div>
+
+      <div class="sb-divider"></div>
+
+      <div class="sb-control">
+        <label for="ctrl-movie">Movie</label>
+        <select id="ctrl-movie">
+          <option value="standard">standard</option>
+          <option value="longTitle">longTitle</option>
+          <option value="noDirector">noDirector</option>
+          <option value="withRatings">withRatings</option>
+        </select>
+      </div>
+
+      <div class="sb-divider"></div>
+
+      <div class="sb-control">
+        <input type="checkbox" id="ctrl-live">
+        <label for="ctrl-live">Live session</label>
+      </div>
+
+      <div class="sb-control">
+        <input type="checkbox" id="ctrl-remove">
+        <label for="ctrl-remove">Show remove button</label>
+      </div>
+
+      <div class="sb-control">
+        <input type="checkbox" id="ctrl-star">
+        <label for="ctrl-star">Show star button</label>
+      </div>
+
+      <div class="sb-control">
+        <input type="checkbox" id="ctrl-ratings">
+        <label for="ctrl-ratings">Show ratings</label>
+      </div>
+    </div>
+  </section>
+
+  <section class="sb-interactive">
+    <div class="sb-section-label">Interactive preview</div>
+    <div class="sb-card-slot" id="interactive-slot"></div>
+  </section>
+
+  <section class="sb-gallery">
+    <div class="sb-section-label" style="margin-bottom: 24px;">All permutations</div>
+    <div class="sb-gallery-grid" id="gallery-grid"></div>
+  </section>
+
+  <script src="../components/card.js"></script>
+  <script src="fixtures.js"></script>
+  <script>
+    // ── Stubs for sandbox environment ─────────────────────────────────────────
+    function getCachedTextures(title) {
+      return { hl: '', sh: '' };
+    }
+    const CARD_RATINGS_KEY = 'thecollection_card_ratings';
+
+    // ── Interactive controls ──────────────────────────────────────────────────
+    const ctrlView    = document.getElementById('ctrl-view');
+    const ctrlMovie   = document.getElementById('ctrl-movie');
+    const ctrlLive    = document.getElementById('ctrl-live');
+    const ctrlRemove  = document.getElementById('ctrl-remove');
+    const ctrlStar    = document.getElementById('ctrl-star');
+    const ctrlRatings = document.getElementById('ctrl-ratings');
+    const slot        = document.getElementById('interactive-slot');
+
+    function renderInteractive() {
+      // Sync ratings toggle to localStorage so appendCardRatings respects it
+      localStorage.setItem(CARD_RATINGS_KEY, ctrlRatings.checked ? 'true' : 'false');
+
+      const movie = Fixtures.movies[ctrlMovie.value];
+      const card = CardComponent.renderCard(movie, {
+        view:        ctrlView.value,
+        isLive:      ctrlLive.checked,
+        onRemove:    ctrlRemove.checked  ? (e) => console.log('remove clicked', movie.title) : null,
+        onStarClick: ctrlStar.checked    ? (e) => console.log('star clicked',   movie.title) : null,
+        onCardClick: (e) => console.log('card clicked', movie.title),
+      });
+
+      slot.innerHTML = '';
+      slot.appendChild(card);
+    }
+
+    [ctrlView, ctrlMovie, ctrlLive, ctrlRemove, ctrlStar, ctrlRatings].forEach(el => {
+      el.addEventListener('change', renderInteractive);
+    });
+
+    // ── Gallery permutations ──────────────────────────────────────────────────
+    const grid = document.getElementById('gallery-grid');
+
+    function galleryItem(labelName, labelMeta, movie, options) {
+      const wrap = document.createElement('div');
+      wrap.className = 'sb-gallery-item';
+
+      const lbl = document.createElement('div');
+      lbl.className = 'sb-item-label';
+      lbl.innerHTML = `<strong>${labelName}</strong><span>${labelMeta}</span>`;
+
+      const cardWrap = document.createElement('div');
+      cardWrap.className = 'sb-card-wrap';
+
+      const card = CardComponent.renderCard(movie, options);
+      cardWrap.appendChild(card);
+
+      wrap.appendChild(lbl);
+      wrap.appendChild(cardWrap);
+      grid.appendChild(wrap);
+    }
+
+    function buildGallery() {
+      localStorage.setItem(CARD_RATINGS_KEY, 'false');
+
+      galleryItem('Default', 'collection view', Fixtures.movies.standard, { view: 'collection' });
+      galleryItem('Collection + Star', 'onStarClick visible', Fixtures.movies.standard, { view: 'collection', onStarClick: () => {} });
+      galleryItem('Watchlist', 'onRemove visible', Fixtures.movies.standard, { view: 'watchlist', onRemove: () => {} });
+      galleryItem('Live session', 'isLive: true', Fixtures.movies.standard, { view: 'collection', isLive: true });
+      galleryItem('Long title', 'Fixtures.movies.longTitle', Fixtures.movies.longTitle, { view: 'collection' });
+      galleryItem('No director', 'director: ""', Fixtures.movies.noDirector, { view: 'collection' });
+
+      localStorage.setItem(CARD_RATINGS_KEY, 'true');
+      galleryItem('Ratings', 'imdb_rating + rt_score', Fixtures.movies.withRatings, { view: 'collection' });
+      localStorage.setItem(CARD_RATINGS_KEY, 'false');
+
+      galleryItem('Maybe', 'view: maybe', Fixtures.movies.standard, { view: 'maybe', onRemove: () => {} });
+      galleryItem('Meh', 'view: meh', Fixtures.movies.standard, { view: 'meh', onRemove: () => {} });
+      galleryItem('Banned', 'view: banned', Fixtures.movies.standard, { view: 'banned', onRemove: () => {} });
+    }
+
+    // Init: fetch real posters, then render everything
+    Fixtures.init().then(() => {
+      renderInteractive();
+      buildGallery();
+    });
+  </script>
+</body>
+</html>

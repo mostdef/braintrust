@@ -16,6 +16,16 @@ settings.html        # Settings page
 settings-app.js      # Settings logic (snapshots, cost tracking, card display)
 styles.css           # All styles
 taste-profile.json   # Curator-generated taste profile (inject into recommendations)
+components/
+  card.js            # CardComponent IIFE — renderCard, addTilt, addTexturesToPoster
+  modal.js           # ModalComponent IIFE — renderModal, renderDetailsContent, renderSessionContent
+  nww.js             # NWWComponent IIFE — renderIdle, renderPill, renderPlaying, renderCompanion, renderDeciding
+sandbox/
+  index.html         # Component gallery landing page
+  card.html          # Card component sandbox (permutations + interactive controls)
+  modal.html         # Modal component sandbox (permutations + interactive controls)
+  nww.html           # NWW widget sandbox (permutations + interactive controls)
+  fixtures.js        # Mock data for sandbox pages (Fixtures.movies, Fixtures.sessions, Fixtures.nwwStates)
 api/
   recommend.js       # AI recommendations (Claude via Anthropic SDK)
   search-movie.js    # OMDB movie search
@@ -26,6 +36,43 @@ api/
   persona-stats.js   # Persona statistics
 snapshots/           # Server-side snapshot JSON files
 ```
+
+## Component Architecture
+
+Components live in `components/` as IIFE modules (no build system). Each exposes pure rendering functions: **data in → DOM node out**, no localStorage reads, no globals except `getCachedTextures()` (defined in `movies-app.js`).
+
+### CardComponent (`components/card.js`)
+```js
+CardComponent.renderCard(movie, { view, isLive, onRemove, onStarClick, onCardClick })
+CardComponent.addTilt(card)
+CardComponent.addTexturesToPoster(card, movie)
+CardComponent.appendCardRatings(card, movie)
+```
+
+### ModalComponent (`components/modal.js`)
+```js
+ModalComponent.renderModal(container, movie, data, {
+  initialTab,           // 'details' | 'session'
+  onWatchTonight,       // fn
+  getActiveSessions,    // () => session | null
+  getPastSessions,      // () => array
+})
+```
+
+### NWWComponent (`components/nww.js`)
+```js
+NWWComponent.renderIdle(container)
+NWWComponent.renderPill(container, { title, poster, elapsed, runtime, barFill })
+NWWComponent.renderPlaying(container, movie, { elapsed, runtime, progressPct, paused, onPause, onDone, onAbandon, onCompanionOpen })
+NWWComponent.renderCompanion(container, { facts, chatHistory, spoilersOk, model, elapsedPct, onClose, onSpoilerToggle, onModelSwitch, onSendChat })
+NWWComponent.renderDeciding(container, movie, { onCollection, onMeh, onBan })
+```
+
+### Sandbox
+- Access at `/sandbox/` in dev
+- `sandbox/fixtures.js` provides mock movies, sessions, and NWW states
+- Each sandbox page is self-contained: stubs `getCachedTextures()`, inlines fonts, loads component file + `styles.css`
+- Blocked from Vercel production via `vercel.json` route rule
 
 ## localStorage Keys
 All keys prefixed `thecollection_`:
@@ -43,6 +90,7 @@ All keys prefixed `thecollection_`:
 | `thecollection_sort_*` | Per-view sort modes |
 | `thecollection_rec_cache` | Cached last recommendation |
 | `thecollection_taste_signals` | Watch session outcome signals (array, newest first, max 50) |
+| `thecollection_tex_<title>` | Persisted fold texture pair `{hl, sh}` as JPEG data URIs — generated once per movie, never regenerated unless cleared |
 
 ## Key Architecture Patterns
 

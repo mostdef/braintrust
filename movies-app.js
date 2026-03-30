@@ -1,3 +1,12 @@
+// Load Sortable in the background — doesn't block initial render.
+// updateSortable() and standards drag-to-reorder await this before using Sortable.
+const _sortableReady = new Promise((resolve, reject) => {
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js';
+  s.onload = resolve; s.onerror = reject;
+  document.head.appendChild(s);
+});
+
 const PERSONA_ENABLED = false; // set to false to disable persona & stats (saves API credits)
 const PERSONA_HIDDEN_KEY = 'thecollection_persona_hidden';
 function isPersonaHidden() { return localStorage.getItem(PERSONA_HIDDEN_KEY) === '1'; }
@@ -166,52 +175,36 @@ function generateFoldTextures() {
   return { hl: buildCanvas(true), sh: buildCanvas(false) };
 }
 
-function addTilt(card) {
-  const sheen = document.createElement('div');
-  sheen.className = 'card-sheen';
-  card.appendChild(sheen);
-
-  let tiltFrame = null;
-  card.addEventListener('mousemove', (e) => {
-    if (tiltFrame) return;
-    const cx = e.clientX, cy = e.clientY;
-    tiltFrame = requestAnimationFrame(() => {
-      const rect = card.getBoundingClientRect();
-      const x = (cx - rect.left) / rect.width - 0.5;
-      const y = (cy - rect.top) / rect.height - 0.5;
-
-      card.style.transition = 'transform 0.05s linear, box-shadow 0.05s linear';
-      card.style.transform = `perspective(800px) rotateY(${x * 7}deg) rotateX(${-y * 7}deg) scale(1.02)`;
-      card.style.boxShadow = `${-x * 10}px ${y * 10}px 24px rgba(0,0,0,0.2)`;
-
-      sheen.style.opacity = '1';
-      sheen.style.background = `radial-gradient(circle at ${(0.5 - x) * 100}% ${(0.5 - y) * 100}%, rgba(255,255,255,0.12) 0%, transparent 65%)`;
-      tiltFrame = null;
-    });
-  });
-
-  card.addEventListener('mouseleave', () => {
-    card.style.transition = 'transform 0.6s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.6s cubic-bezier(0.23, 1, 0.32, 1)';
-    card.style.transform = '';
-    card.style.boxShadow = '';
-    sheen.style.opacity = '0';
-  });
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// addTilt, addTexturesToPoster, appendCardRatings moved to components/card.js
 
 const textureCache = new Map();
 const TEXTURE_CACHE_MAX = 80;
+const TEXTURE_STORE_PREFIX = 'thecollection_tex_';
+
 function getCachedTextures(key) {
+  // L1: in-memory LRU
   if (textureCache.has(key)) {
     const val = textureCache.get(key);
     textureCache.delete(key);
     textureCache.set(key, val);
     return val;
   }
-  if (textureCache.size >= TEXTURE_CACHE_MAX) {
-    textureCache.delete(textureCache.keys().next().value);
-  }
+  // L2: localStorage (persists across page loads — generated once per movie)
+  try {
+    const stored = localStorage.getItem(TEXTURE_STORE_PREFIX + key);
+    if (stored) {
+      const textures = JSON.parse(stored);
+      if (textureCache.size >= TEXTURE_CACHE_MAX) textureCache.delete(textureCache.keys().next().value);
+      textureCache.set(key, textures);
+      return textures;
+    }
+  } catch {}
+  // L3: generate fresh, then persist
+  if (textureCache.size >= TEXTURE_CACHE_MAX) textureCache.delete(textureCache.keys().next().value);
   const textures = generateFoldTextures();
   textureCache.set(key, textures);
+  try { localStorage.setItem(TEXTURE_STORE_PREFIX + key, JSON.stringify(textures)); } catch {}
   return textures;
 }
 
@@ -282,8 +275,8 @@ function renderStandardsSection() {
 
   wrap.appendChild(slots);
 
-  // Drag-to-reorder within standards
-  Sortable.create(slots, {
+  // Drag-to-reorder within standards (Sortable loads async, attach when ready)
+  _sortableReady.then(() => Sortable.create(slots, {
     draggable: '.standards-slot.filled',
     filter: '.standards-slot.empty',
     animation: 300,
@@ -297,7 +290,7 @@ function renderStandardsSection() {
       saveStandards(ordered);
       renderPersonaSection();
     },
-  });
+  }));
 
   // Track which slot is hovered during drag — actual save happens in SortableJS onEnd
   wrap.addEventListener('dragover', (e) => {
@@ -618,99 +611,21 @@ function render(list) {
   const g = getGrid('collection');
   g.innerHTML = '';
   const standardTitles = new Set(loadStandards().map(m => m.title));
+  const nwData = loadNowWatching();
+  const liveTitle = nwData ? nwData.title : null;
   list.filter(movie => !standardTitles.has(movie.title)).forEach(movie => {
-    const card = document.createElement('div');
-    card.className = 'card movie-card';
-    card.dataset.title = movie.title;
-    card.dataset.view = 'collection';
-
-    const imgWrap = document.createElement('div');
-    imgWrap.className = 'poster-wrap';
-    const img = document.createElement('img');
-    img.className = 'card-image movie-poster';
-    img.draggable = false;
-    img.src = movie.poster;
-    img.alt = movie.title;
-
-    const textures = getCachedTextures(movie.title);
-
-    const hlDiv = document.createElement('div');
-    hlDiv.className = 'poster-texture poster-texture-hl';
-    hlDiv.style.backgroundImage = `url(${textures.hl})`;
-
-    const shDiv = document.createElement('div');
-    shDiv.className = 'poster-texture poster-texture-sh';
-    shDiv.style.backgroundImage = `url(${textures.sh})`;
-
-    const starBtn = document.createElement('button');
-    starBtn.className = 'card-star-btn';
-    starBtn.title = 'Add to Reference Films';
-    starBtn.innerHTML = '★';
-    starBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const ok = toggleStandard(movie);
-      if (ok !== false) { render(sortedList(movies, 'collection')); applyGrain(); }
+    const card = CardComponent.renderCard(movie, {
+      view: 'collection',
+      isLive: movie.title === liveTitle,
+      onStarClick: () => {
+        const ok = toggleStandard(movie);
+        if (ok !== false) { render(sortedList(movies, 'collection')); applyGrain(); }
+      },
     });
-
-    imgWrap.appendChild(img);
-    imgWrap.appendChild(hlDiv);
-    imgWrap.appendChild(shDiv);
-    imgWrap.appendChild(starBtn);
-
-    const info = document.createElement('div');
-    info.className = 'card-info';
-
-    const title = document.createElement('span');
-    title.className = 'card-name';
-    title.textContent = movie.title;
-
-    const meta = document.createElement('span');
-    meta.className = 'card-trade';
-    meta.textContent = [movie.director, movie.year].filter(Boolean).join(', ');
-
-    info.appendChild(title);
-    info.appendChild(meta);
-    appendCardRatings(info, movie);
-    card.appendChild(imgWrap);
-    card.appendChild(info);
     g.appendChild(card);
-
-    addTilt(card);
   });
   if (!list.length) showEmptyState(g);
   markClean('collection');
-}
-
-const CARD_RATINGS_KEY = 'thecollection_card_ratings';
-function isCardRatingsEnabled() {
-  return localStorage.getItem(CARD_RATINGS_KEY) === 'true';
-}
-
-function appendCardRatings(info, movie) {
-  // Always wrap title+meta in a left column so card-info (flex row) is consistent
-  const left = document.createElement('div');
-  left.className = 'card-info-left';
-  while (info.firstChild) left.appendChild(info.firstChild);
-  info.appendChild(left);
-
-  if (!isCardRatingsEnabled()) return;
-  if (!movie.imdb_rating && !movie.rt_score) return;
-
-  const ratings = document.createElement('div');
-  ratings.className = 'card-ratings';
-  if (movie.imdb_rating) {
-    const imdb = document.createElement('span');
-    imdb.className = 'card-rating card-rating-imdb';
-    imdb.textContent = `IMDb ${movie.imdb_rating}`;
-    ratings.appendChild(imdb);
-  }
-  if (movie.rt_score) {
-    const rt = document.createElement('span');
-    rt.className = 'card-rating card-rating-rt';
-    rt.textContent = `🍅 ${movie.rt_score}`;
-    ratings.appendChild(rt);
-  }
-  info.appendChild(ratings);
 }
 
 const TMDB = 'https://image.tmdb.org/t/p/';
@@ -1303,23 +1218,27 @@ function schedulePush() {
   _syncDebounce = setTimeout(supabasePush, 2000);
 }
 
+// Returns true if cloud data was written to localStorage (caller should re-render).
 async function supabaseHydrate() {
   const token = await getAuthToken().catch(() => null);
-  if (!token) return; // not logged in — use localStorage as-is
+  if (!token) return false;
   try {
     const res = await fetch('/api/user-data', {
       headers: { 'Authorization': `Bearer ${token}` },
     });
-    if (!res.ok) return;
+    if (!res.ok) return false;
     const data = await res.json();
-    if (data.movies    !== undefined) localStorage.setItem(STORAGE_KEY,   JSON.stringify(data.movies));
-    if (data.watchlist !== undefined) localStorage.setItem(WATCHLIST_KEY, JSON.stringify(data.watchlist));
-    if (data.maybe     !== undefined) localStorage.setItem(MAYBE_KEY,     JSON.stringify(data.maybe));
-    if (data.meh       !== undefined) localStorage.setItem(MEH_KEY,       JSON.stringify(data.meh));
-    if (data.banned    !== undefined) localStorage.setItem(BANNED_KEY,    JSON.stringify(data.banned));
-    if (data.standards !== undefined) localStorage.setItem(STANDARDS_KEY, JSON.stringify(data.standards));
-    if (data.total_cost !== undefined) localStorage.setItem(TOTAL_COST_KEY, String(data.total_cost));
-  } catch(e) {}
+    let changed = false;
+    const set = (key, val) => { if (val !== undefined) { localStorage.setItem(key, JSON.stringify(val)); changed = true; } };
+    set(STORAGE_KEY,    data.movies);
+    set(WATCHLIST_KEY,  data.watchlist);
+    set(MAYBE_KEY,      data.maybe);
+    set(MEH_KEY,        data.meh);
+    set(BANNED_KEY,     data.banned);
+    set(STANDARDS_KEY,  data.standards);
+    if (data.total_cost !== undefined) { localStorage.setItem(TOTAL_COST_KEY, String(data.total_cost)); changed = true; }
+    return changed;
+  } catch(e) { return false; }
 }
 const MAX_SNAPSHOTS  = 20;
 const MAX_STANDARDS  = 12;
@@ -1494,7 +1413,8 @@ const NAV_ICONS = {
   banned:     '👻',
 };
 
-function updateSortable(view) {
+async function updateSortable(view) {
+  await _sortableReady;
   const el = getGrid(view);
   const locked = getSortMode(view) !== 'preference';
   el.classList.toggle('sort-locked', locked);
@@ -1767,79 +1687,31 @@ function renderGridNav() {
   if (nav) buildNavButtons(nav);
 }
 
-function addTexturesToPoster(posterWrap, key) {
-  const textures = getCachedTextures(key);
-  const hlDiv = document.createElement('div');
-  hlDiv.className = 'poster-texture poster-texture-hl';
-  hlDiv.style.backgroundImage = `url(${textures.hl})`;
-  const shDiv = document.createElement('div');
-  shDiv.className = 'poster-texture poster-texture-sh';
-  shDiv.style.backgroundImage = `url(${textures.sh})`;
-  posterWrap.appendChild(hlDiv);
-  posterWrap.appendChild(shDiv);
-}
-
 function renderWatchlistGrid() {
   const g = getGrid('watchlist');
   const standardTitles = new Set(loadStandards().map(m => m.title));
   const list = sortedList(loadWatchlist(), 'watchlist').filter(m => !standardTitles.has(m.title));
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('watchlist'); return; }
+  const _nwWL = loadNowWatching(); const _liveTitleWL = _nwWL ? _nwWL.title : null;
   list.forEach(movie => {
-    const card = document.createElement('div');
-    card.className = 'card movie-card';
-    card.dataset.title = movie.title;
-    card.dataset.view = 'watchlist';
-
-    const posterWrap = document.createElement('div');
-    posterWrap.className = 'poster-wrap';
-
-    const img = document.createElement('img');
-    img.className = 'card-image movie-poster';
-    img.draggable = false;
-    img.src = movie.poster;
-    img.alt = movie.title;
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'card-remove-btn';
-    removeBtn.innerHTML = '✕';
-    removeBtn.title = 'Remove from To Watch';
-    removeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      saveSnapshot(`Before removing "${movie.title}" from To Watch`);
-      const prev = loadWatchlist();
-      const updated = prev.filter(m => m.title !== movie.title);
-      saveWatchlist(updated);
-      renderWatchlistGrid();
-      renderGridNav();
-      showUndo(`Removed "${movie.title}" from To Watch`, () => {
-        saveWatchlist(prev);
+    const card = CardComponent.renderCard(movie, {
+      view: 'watchlist',
+      isLive: movie.title === _liveTitleWL,
+      onRemove: () => {
+        saveSnapshot(`Before removing "${movie.title}" from To Watch`);
+        const prev = loadWatchlist();
+        const updated = prev.filter(m => m.title !== movie.title);
+        saveWatchlist(updated);
         renderWatchlistGrid();
         renderGridNav();
-      });
+        showUndo(`Removed "${movie.title}" from To Watch`, () => {
+          saveWatchlist(prev);
+          renderWatchlistGrid();
+          renderGridNav();
+        });
+      },
     });
-
-    posterWrap.appendChild(img);
-    addTexturesToPoster(posterWrap, movie.title);
-    posterWrap.appendChild(removeBtn);
-
-    const info = document.createElement('div');
-    info.className = 'card-info';
-
-    const title = document.createElement('span');
-    title.className = 'card-name';
-    title.textContent = movie.title;
-
-    const meta = document.createElement('span');
-    meta.className = 'card-trade';
-    meta.textContent = [movie.director, movie.year].filter(Boolean).join(', ');
-
-    info.appendChild(title);
-    info.appendChild(meta);
-    appendCardRatings(info, movie);
-    card.appendChild(posterWrap);
-    card.appendChild(info);
-
     g.appendChild(card);
   });
   applyGrain();
@@ -1852,61 +1724,25 @@ function renderBannedGrid() {
   const banned = sortedList(loadBanned(), 'banned').filter(m => !standardTitles.has(m.title));
   g.innerHTML = '';
   if (!banned.length) { showEmptyState(g); markClean('banned'); return; }
+  const _nwBN = loadNowWatching(); const _liveTitleBN = _nwBN ? _nwBN.title : null;
   banned.forEach(movie => {
-    const card = document.createElement('div');
-    card.className = 'card movie-card';
-    card.dataset.title = movie.title;
-    card.dataset.view = 'banned';
-
-    const posterWrap = document.createElement('div');
-    posterWrap.className = 'poster-wrap';
-
-    const img = document.createElement('img');
-    img.className = 'card-image movie-poster';
-    img.draggable = false;
-    img.src = movie.poster;
-    img.alt = movie.title;
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'card-remove-btn';
-    removeBtn.innerHTML = '✕';
-    removeBtn.title = 'Remove from Don\'t Recommend';
-    removeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      saveSnapshot(`Before removing "${movie.title}" from Don't Recommend`);
-      const prev = loadBanned();
-      const list = prev.filter(m => m.title !== movie.title);
-      saveBanned(list);
-      renderBannedGrid();
-      renderGridNav();
-      showUndo(`Removed "${movie.title}" from Don't Recommend`, () => {
-        saveBanned(prev);
+    const card = CardComponent.renderCard(movie, {
+      view: 'banned',
+      isLive: movie.title === _liveTitleBN,
+      onRemove: () => {
+        saveSnapshot(`Before removing "${movie.title}" from Don't Recommend`);
+        const prev = loadBanned();
+        const list = prev.filter(m => m.title !== movie.title);
+        saveBanned(list);
         renderBannedGrid();
         renderGridNav();
-      });
+        showUndo(`Removed "${movie.title}" from Don't Recommend`, () => {
+          saveBanned(prev);
+          renderBannedGrid();
+          renderGridNav();
+        });
+      },
     });
-
-    posterWrap.appendChild(img);
-    addTexturesToPoster(posterWrap, movie.title);
-    posterWrap.appendChild(removeBtn);
-
-    const info = document.createElement('div');
-    info.className = 'card-info';
-
-    const title = document.createElement('span');
-    title.className = 'card-name';
-    title.textContent = movie.title;
-
-    const meta = document.createElement('span');
-    meta.className = 'card-trade';
-    meta.textContent = [movie.director, movie.year].filter(Boolean).join(', ');
-
-    info.appendChild(title);
-    info.appendChild(meta);
-    appendCardRatings(info, movie);
-    card.appendChild(posterWrap);
-    card.appendChild(info);
-
     g.appendChild(card);
   });
   applyGrain();
@@ -1919,61 +1755,25 @@ function renderMaybeGrid() {
   const list = sortedList(loadMaybe(), 'maybe').filter(m => !standardTitles.has(m.title));
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('maybe'); return; }
+  const _nwMB = loadNowWatching(); const _liveTitleMB = _nwMB ? _nwMB.title : null;
   list.forEach(movie => {
-    const card = document.createElement('div');
-    card.className = 'card movie-card';
-    card.dataset.title = movie.title;
-    card.dataset.view = 'maybe';
-
-    const posterWrap = document.createElement('div');
-    posterWrap.className = 'poster-wrap';
-
-    const img = document.createElement('img');
-    img.className = 'card-image movie-poster';
-    img.draggable = false;
-    img.src = movie.poster;
-    img.alt = movie.title;
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'card-remove-btn';
-    removeBtn.innerHTML = '✕';
-    removeBtn.title = 'Remove from Wildcard';
-    removeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      saveSnapshot(`Before removing "${movie.title}" from Wildcard`);
-      const prev = loadMaybe();
-      const updated = prev.filter(m => m.title !== movie.title);
-      saveMaybe(updated);
-      renderMaybeGrid();
-      renderGridNav();
-      showUndo(`Removed "${movie.title}" from Wildcard`, () => {
-        saveMaybe(prev);
+    const card = CardComponent.renderCard(movie, {
+      view: 'maybe',
+      isLive: movie.title === _liveTitleMB,
+      onRemove: () => {
+        saveSnapshot(`Before removing "${movie.title}" from Wildcard`);
+        const prev = loadMaybe();
+        const updated = prev.filter(m => m.title !== movie.title);
+        saveMaybe(updated);
         renderMaybeGrid();
         renderGridNav();
-      });
+        showUndo(`Removed "${movie.title}" from Wildcard`, () => {
+          saveMaybe(prev);
+          renderMaybeGrid();
+          renderGridNav();
+        });
+      },
     });
-
-    posterWrap.appendChild(img);
-    addTexturesToPoster(posterWrap, movie.title);
-    posterWrap.appendChild(removeBtn);
-
-    const info = document.createElement('div');
-    info.className = 'card-info';
-
-    const title = document.createElement('span');
-    title.className = 'card-name';
-    title.textContent = movie.title;
-
-    const meta = document.createElement('span');
-    meta.className = 'card-trade';
-    meta.textContent = [movie.director, movie.year].filter(Boolean).join(', ');
-
-    info.appendChild(title);
-    info.appendChild(meta);
-    appendCardRatings(info, movie);
-    card.appendChild(posterWrap);
-    card.appendChild(info);
-
     g.appendChild(card);
   });
   applyGrain();
@@ -1986,61 +1786,25 @@ function renderMehGrid() {
   const list = sortedList(loadMeh(), 'meh').filter(m => !standardTitles.has(m.title));
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('meh'); return; }
+  const _nwMH = loadNowWatching(); const _liveTitleMH = _nwMH ? _nwMH.title : null;
   list.forEach(movie => {
-    const card = document.createElement('div');
-    card.className = 'card movie-card';
-    card.dataset.title = movie.title;
-    card.dataset.view = 'meh';
-
-    const posterWrap = document.createElement('div');
-    posterWrap.className = 'poster-wrap';
-
-    const img = document.createElement('img');
-    img.className = 'card-image movie-poster';
-    img.draggable = false;
-    img.src = movie.poster;
-    img.alt = movie.title;
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'card-remove-btn';
-    removeBtn.innerHTML = '✕';
-    removeBtn.title = 'Remove from Meh';
-    removeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      saveSnapshot(`Before removing "${movie.title}" from Meh`);
-      const prev = loadMeh();
-      const updated = prev.filter(m => m.title !== movie.title);
-      saveMeh(updated);
-      renderMehGrid();
-      renderGridNav();
-      showUndo(`Removed "${movie.title}" from Meh`, () => {
-        saveMeh(prev);
+    const card = CardComponent.renderCard(movie, {
+      view: 'meh',
+      isLive: movie.title === _liveTitleMH,
+      onRemove: () => {
+        saveSnapshot(`Before removing "${movie.title}" from Meh`);
+        const prev = loadMeh();
+        const updated = prev.filter(m => m.title !== movie.title);
+        saveMeh(updated);
         renderMehGrid();
         renderGridNav();
-      });
+        showUndo(`Removed "${movie.title}" from Meh`, () => {
+          saveMeh(prev);
+          renderMehGrid();
+          renderGridNav();
+        });
+      },
     });
-
-    posterWrap.appendChild(img);
-    addTexturesToPoster(posterWrap, movie.title);
-    posterWrap.appendChild(removeBtn);
-
-    const info = document.createElement('div');
-    info.className = 'card-info';
-
-    const title = document.createElement('span');
-    title.className = 'card-name';
-    title.textContent = movie.title;
-
-    const meta = document.createElement('span');
-    meta.className = 'card-trade';
-    meta.textContent = [movie.director, movie.year].filter(Boolean).join(', ');
-
-    info.appendChild(title);
-    info.appendChild(meta);
-    appendCardRatings(info, movie);
-    card.appendChild(posterWrap);
-    card.appendChild(info);
-
     g.appendChild(card);
   });
   applyGrain();
@@ -2075,15 +1839,21 @@ function syncOrderFromDOM() {
   saveMovies();
 }
 
-// Hydrate from Supabase then render. Falls back to localStorage if not logged in.
+// Render immediately from localStorage, then re-render if Supabase sync brings newer data.
 (async function init() {
-  await initAuth().catch(() => {});
-  await supabaseHydrate();
   loadMovies();
   render(movies);
   renderGridNav();
   initRecHeading();
   fetchRecommendation();
+
+  await initAuth().catch(() => {});
+  const changed = await supabaseHydrate();
+  if (changed) {
+    loadMovies();
+    setGridView(currentView);
+    renderGridNav();
+  }
 })();
 
 
@@ -2132,10 +1902,15 @@ function openMovieModal(movie, list = null) {
   document.getElementById('mm-nav-prev').style.visibility = modalList.length > 1 ? '' : 'hidden';
   document.getElementById('mm-nav-next').style.visibility = modalList.length > 1 ? '' : 'hidden';
 
-  const backdrop = document.getElementById('movie-modal-backdrop');
-  const body     = document.getElementById('movie-modal-body');
+  const backdrop   = document.getElementById('movie-modal-backdrop');
+  const body       = document.getElementById('movie-modal-body');
+  const modalEl    = document.getElementById('movie-modal');
   backdrop.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+
+  // Golden glow when this film has an active watching session
+  const isLive = !!mmGetActiveSession(movie.title);
+  modalEl.classList.toggle('movie-modal--live', isLive);
 
   // Show loading state immediately with known data
   body.innerHTML = `
@@ -2149,6 +1924,10 @@ function openMovieModal(movie, list = null) {
     <div class="mm-info">
       <div class="mm-title">${movie.title}</div>
       <div class="mm-meta">${[movie.director, movie.year].filter(Boolean).join(' · ')}</div>
+      <div class="mm-tabs mm-tabs-skel">
+        <div class="mm-tab mm-tab-active">Details</div>
+        <div class="mm-tab">Session</div>
+      </div>
       <div class="mm-genres">
         <div class="mm-loading-bar mm-skel-tag"></div>
         <div class="mm-loading-bar mm-skel-tag"></div>
@@ -2187,151 +1966,49 @@ function openMovieModal(movie, list = null) {
     .catch(() => {});
 }
 
+function mmNormalizeTitle(t) {
+  return (t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function mmGetSessions(title) {
+  try {
+    const signals = JSON.parse(localStorage.getItem(TASTE_SIGNALS_KEY) || '[]');
+    return signals.filter(s => mmNormalizeTitle(s.title) === mmNormalizeTitle(title));
+  } catch { return []; }
+}
+
+function mmGetActiveSession(title) {
+  const data = loadNowWatching();
+  if (!data) return null;
+  if (mmNormalizeTitle(data.title) !== mmNormalizeTitle(title)) return null;
+  return data;
+}
+
 function renderModalDetails(body, movie, data) {
-  body.innerHTML = '';
-
-  const posterCol = document.createElement('div');
-  posterCol.className = 'mm-poster-col';
-  const poster = document.createElement('img');
-  poster.className = 'mm-poster';
-  poster.src = data.poster || movie.poster;
-  poster.alt = movie.title;
-  posterCol.appendChild(poster);
-
-  if (data.imdb_rating || data.rt_score) {
-    const ratings = document.createElement('div');
-    ratings.className = 'mm-ratings';
-    if (data.imdb_rating) {
-      const imdbLink = document.createElement('a');
-      imdbLink.className = 'mm-rating-badge mm-rating-imdb';
-      imdbLink.href = data.imdb_id ? `https://www.imdb.com/title/${data.imdb_id}` : '#';
-      imdbLink.target = '_blank';
-      imdbLink.rel = 'noopener noreferrer';
-      imdbLink.innerHTML = `<span class="mm-rating-logo">IMDb</span><span>⭐ ${data.imdb_rating}</span>`;
-      ratings.appendChild(imdbLink);
-    }
-    if (data.rt_score) {
-      const pct = parseInt(data.rt_score);
-      const fresh = pct >= 60;
-      const rt = document.createElement('a');
-      rt.className = 'mm-rating-badge mm-rating-rt';
-      rt.href = `https://www.rottentomatoes.com/search?search=${encodeURIComponent(movie.title)}`;
-      rt.target = '_blank';
-      rt.rel = 'noopener noreferrer';
-      rt.innerHTML = `<span>${fresh ? '🍅' : '🤢'}</span><span>${data.rt_score}</span>`;
-      ratings.appendChild(rt);
-    }
-    posterCol.appendChild(ratings);
-  }
-
-  const watchBtn = document.createElement('button');
-  watchBtn.className = 'mm-watch-btn';
-  watchBtn.textContent = 'Watch Tonight';
-  watchBtn.addEventListener('click', () => watchTonight(movie, gridView));
-  posterCol.appendChild(watchBtn);
-
-  const info = document.createElement('div');
-  info.className = 'mm-info';
-
-  // Header
-  const title = document.createElement('div');
-  title.className = 'mm-title';
-  title.textContent = movie.title;
-
-  const meta = document.createElement('div');
-  meta.className = 'mm-meta';
-  const parts = [movie.director, movie.year];
-  if (data.runtime) parts.push(`${data.runtime} min`);
-  meta.textContent = parts.join(' · ');
-
-  info.append(title, meta);
-
-  if (data.genres?.length) {
-    const genres = document.createElement('div');
-    genres.className = 'mm-genres';
-    data.genres.forEach(g => {
-      const tag = document.createElement('span');
-      tag.className = 'mm-genre-tag';
-      tag.textContent = g;
-      genres.appendChild(tag);
-    });
-    info.appendChild(genres);
-  }
-
-  if (data.tagline) {
-    const tagline = document.createElement('div');
-    tagline.className = 'mm-tagline';
-    tagline.textContent = `"${data.tagline}"`;
-    info.appendChild(tagline);
-  }
-
-  if (data.overview) {
-    const overview = document.createElement('p');
-    overview.className = 'mm-overview';
-    overview.textContent = data.overview;
-    info.appendChild(overview);
-  }
-
-  // Cast
-  if (data.cast?.length) {
-    const castLabel = document.createElement('div');
-    castLabel.className = 'mm-section-label';
-    castLabel.textContent = 'Cast';
-    info.appendChild(castLabel);
-
-    const castRow = document.createElement('div');
-    castRow.className = 'mm-cast';
-    data.cast.forEach(person => {
-      const item = document.createElement('a');
-      item.className = 'mm-cast-item';
-      item.href = person.wiki;
-      item.target = '_blank';
-      item.rel = 'noopener noreferrer';
-      const photo = document.createElement('div');
-      photo.className = 'mm-cast-photo';
-      if (person.photo) {
-        const img = document.createElement('img');
-        img.src = person.photo;
-        img.alt = person.name;
-        photo.appendChild(img);
-      } else {
-        photo.classList.add('mm-cast-photo-blank');
-        photo.textContent = person.name[0];
+  // Backfill director into storage if the API returned one and we didn't have it
+  if (!movie.director && data.director) {
+    const listKeys = ['movies', 'watchlist', 'maybe', 'meh', 'banned'];
+    const loaders  = { movies: loadMovies, watchlist: loadWatchlist, maybe: loadMaybe, meh: loadMeh, banned: loadBanned };
+    const savers   = { movies: saveMovies, watchlist: saveWatchlist, maybe: saveMaybe, meh: saveMeh, banned: saveBanned };
+    listKeys.forEach(key => {
+      const arr = loaders[key]();
+      const entry = arr.find(x => x.title === movie.title);
+      if (entry && !entry.director) {
+        entry.director = data.director;
+        savers[key](arr);
       }
-      const name = document.createElement('div');
-      name.className = 'mm-cast-name';
-      name.textContent = person.name;
-      const character = document.createElement('div');
-      character.className = 'mm-cast-character';
-      character.textContent = person.character;
-      item.append(photo, name, character);
-      castRow.appendChild(item);
     });
-    info.appendChild(castRow);
+    movie.director = data.director;
   }
 
-  // Key crew
-  if (data.keyCrew?.length) {
-    const crewLabel = document.createElement('div');
-    crewLabel.className = 'mm-section-label';
-    crewLabel.textContent = 'Key Crew';
-    info.appendChild(crewLabel);
-
-    const crewGrid = document.createElement('div');
-    crewGrid.className = 'mm-crew';
-    data.keyCrew.forEach(({ role, name, wiki }) => {
-      const row = document.createElement('a');
-      row.className = 'mm-crew-row';
-      row.href = wiki;
-      row.target = '_blank';
-      row.rel = 'noopener noreferrer';
-      row.innerHTML = `<span class="mm-crew-role">${role}</span><span class="mm-crew-name">${name}</span>`;
-      crewGrid.appendChild(row);
-    });
-    info.appendChild(crewGrid);
-  }
-
-  body.append(posterCol, info);
+  ModalComponent.renderModal(body, movie, data, {
+    initialTab: 'details',
+    onWatchTonight: (m) => watchTonight(m, gridView),
+    getActiveSessions: () => loadNowWatching(),
+    getPastSessions: () => {
+      try { return JSON.parse(localStorage.getItem(TASTE_SIGNALS_KEY) || '[]'); } catch { return []; }
+    },
+  });
 }
 
 function closeMovieModal() {
@@ -2612,6 +2289,17 @@ function nwwDefaultCompanion() {
   };
 }
 
+function nwwRenderFactDots(facts) {
+  nww.progressBar.querySelectorAll('.nww-fact-dot').forEach(d => d.remove());
+  if (!facts?.length) return;
+  facts.forEach(f => {
+    const dot = document.createElement('div');
+    dot.className = 'nww-fact-dot' + (f.delivered ? ' nww-fact-dot-delivered' : '');
+    dot.style.left = f.pct + '%';
+    nww.progressBar.appendChild(dot);
+  });
+}
+
 function nwwSetCompanionOpen(open) {
   nww.el.classList.toggle('nww--companion-open', open);
   const data = loadNowWatching();
@@ -2644,15 +2332,14 @@ function nwwRenderCompanion(data) {
     return;
   }
   const c = data.companion || nwwDefaultCompanion();
-  nww.companionTitle.textContent = data.title || '';
   nww.companionSpoiler.checked = c.spoilers_ok;
   nwwCompanionUpdateModelBtns(c.model_mode);
 
-  // Render delivered facts
+  // Render all facts (delivered = visible, undelivered = dimmed)
   nww.factsList.innerHTML = '';
-  const delivered = c.facts.filter(f => f.delivered);
-  if (delivered.length) {
-    delivered.forEach(f => nwwAppendFact(f, false));
+  nwwRenderFactDots(c.facts);
+  if (c.facts.length) {
+    c.facts.forEach(f => nwwAppendFact(f, false));
   } else if (!c.facts_fetched) {
     nww.factsList.innerHTML = '<div class="nww-facts-loading" id="nww-facts-loading"><div class="nww-facts-skeleton"></div><div class="nww-facts-skeleton"></div></div>';
     nww.factsLoading = document.getElementById('nww-facts-loading');
@@ -2666,12 +2353,12 @@ function nwwRenderCompanion(data) {
   nww.chatThread.scrollTop = nww.chatThread.scrollHeight;
 }
 
-function nwwAppendFact(fact, isNew = true) {
+function nwwAppendFact(fact, highlight = false) {
   const card = document.createElement('div');
-  card.className = 'nww-fact-card' + (isNew ? ' nww-fact-new' : '');
+  card.dataset.pct = fact.pct;
+  card.className = 'nww-fact-card' + (highlight ? ' nww-fact-new' : (!fact.delivered ? ' nww-fact-upcoming' : ''));
   card.innerHTML = `<div class="nww-fact-pct">~${fact.pct}% in</div><div class="nww-fact-text">${fact.text}</div>`;
   nww.factsList.appendChild(card);
-  nww.factsList.scrollTop = nww.factsList.scrollHeight;
 }
 
 function nwwAppendChatBubble(role, content, animate = true) {
@@ -2749,7 +2436,8 @@ async function nwwFetchFacts(data) {
 
     if (nwData.companion.open) {
       nww.factsList.innerHTML = '';
-      nwData.companion.facts.filter(f => f.delivered).forEach(f => nwwAppendFact(f, false));
+      nwData.companion.facts.forEach(f => nwwAppendFact(f, false));
+      nwwRenderFactDots(nwData.companion.facts);
       nwwCompanionUpdateFooter(nwData.companion.session_cost);
     }
   } catch {
@@ -2781,8 +2469,18 @@ function nwwMaybeDeliverFact(elapsedMs, data) {
   next.delivered = true;
   saveNowWatching(data);
 
+  // Update the timeline dot regardless of panel state
+  const dot = nww.progressBar.querySelector(`.nww-fact-dot[style*="left: ${next.pct}%"]`);
+  if (dot) dot.classList.add('nww-fact-dot-delivered');
+
   if (c.open) {
-    nwwAppendFact(next, true);
+    // Find the existing dimmed card and activate it
+    const card = nww.factsList.querySelector(`[data-pct="${next.pct}"]`);
+    if (card) {
+      card.classList.remove('nww-fact-upcoming');
+      card.classList.add('nww-fact-new');
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
   } else {
     // Pulse pill to signal new fact
     nww.pill.classList.remove('nww-pill-fact-pulse');
@@ -2875,6 +2573,8 @@ function nwwExtractTasteSignal(data, decision) {
     abandoned:          decision === 'banned' && elapsed_pct !== null && elapsed_pct < 50,
     chat_turns:         Math.floor((data.companion?.chat_history?.length || 0) / 2),
     source_view:        data.sourceView,
+    facts:              (data.companion?.facts || []).filter(f => f.delivered),
+    chat_history:       data.companion?.chat_history || [],
   };
   try {
     const signals = JSON.parse(localStorage.getItem(TASTE_SIGNALS_KEY) || '[]');

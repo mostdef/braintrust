@@ -48,11 +48,11 @@
     <!-- Companion panel -->
     <div class="nww-companion" id="nww-companion">
       <div class="nww-companion-header">
-        <span class="nww-companion-title-text" id="nww-companion-title"></span>
         <div class="nww-companion-header-controls">
           <label class="nww-companion-toggle-wrap">
             <input type="checkbox" id="nww-companion-spoiler">
-            <span class="nww-companion-toggle-label">Spoilers OK</span>
+            <span class="nww-pill-switch"></span>
+            <span class="nww-companion-toggle-label">Spoil me</span>
           </label>
           <div class="nww-model-toggle">
             <button class="nww-model-btn" data-model="sonnet" id="nww-model-sonnet">Sonnet</button>
@@ -147,10 +147,11 @@
     </div>
     <button class="mm-nav-btn" id="mm-nav-next">&#8594;</button>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="movies-data.js"></script>
-  <script src="auth.js"></script>
-  <script src="movies-app.js"></script>
+  <script defer src="movies-data.js"></script>
+  <script defer src="auth.js"></script>
+  <script defer src="components/card.js"></script>
+  <script defer src="components/modal.js"></script>
+  <script defer src="components/nww.js"></script>
+  <script defer src="movies-app.js"></script>
 </body>
 </html>

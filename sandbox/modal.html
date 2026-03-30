@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modal — Component Sandbox</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1a1a1a;
+      color: #fff;
+      min-height: 100vh;
+      padding: 48px 32px 80px;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* ── Page header ───────────────────────────────────────────── */
+    .sandbox-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #555;
+      text-decoration: none;
+      margin-bottom: 24px;
+      transition: color 0.15s ease;
+    }
+    .sandbox-back:hover { color: #888; }
+    .sandbox-back svg { width: 12px; height: 12px; }
+
+    .sandbox-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 36px;
+      font-weight: 700;
+      font-style: italic;
+      color: #fff;
+      letter-spacing: -0.01em;
+      line-height: 1.1;
+    }
+    .sandbox-subtitle {
+      font-size: 13px;
+      color: #555;
+      margin-top: 8px;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* ── Controls panel ────────────────────────────────────────── */
+    .controls-panel {
+      margin-top: 40px;
+      margin-bottom: 48px;
+      padding: 24px 28px;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 10px;
+      max-width: 900px;
+    }
+
+    .controls-panel h2 {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #666;
+      margin-bottom: 20px;
+    }
+
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 32px;
+      align-items: flex-start;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .control-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #666;
+    }
+
+    .control-radios {
+      display: flex;
+      gap: 12px;
+    }
+
+    .control-radios label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #bbb;
+      cursor: pointer;
+    }
+
+    .control-radios input[type="radio"] {
+      accent-color: #fff;
+      cursor: pointer;
+    }
+
+    .control-select {
+      background: #1c1c1c;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #ddd;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      padding: 6px 10px;
+      cursor: pointer;
+      outline: none;
+    }
+    .control-select:focus { border-color: #555; }
+
+    .control-checkbox label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #bbb;
+      cursor: pointer;
+    }
+    .control-checkbox input[type="checkbox"] {
+      accent-color: #fff;
+      cursor: pointer;
+      width: 14px;
+      height: 14px;
+    }
+
+    /* ── Interactive preview ───────────────────────────────────── */
+    .preview-section {
+      max-width: 900px;
+      margin-bottom: 48px;
+    }
+
+    .preview-section h2 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #666;
+      margin-bottom: 16px;
+    }
+
+    /* ── Permutations gallery ──────────────────────────────────── */
+    .gallery {
+      max-width: 900px;
+      display: flex;
+      flex-direction: column;
+      gap: 48px;
+    }
+
+    .gallery-section {}
+
+    .gallery-label {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    /* ── Modal frame (no backdrop, just the card) ──────────────── */
+    .modal-frame {
+      max-width: 900px;
+    }
+
+    .modal-frame .movie-modal {
+      position: relative;
+      display: block;
+      max-height: none;
+      overflow: visible;
+    }
+
+    .modal-frame .movie-modal-close {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="./index.html" class="sandbox-back">
+      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 2L4 6l4 4"/>
+      </svg>
+      Sandbox
+    </a>
+    <h1 class="sandbox-title">Modal</h1>
+    <p class="sandbox-subtitle">Movie detail modal — tabs, sessions, ratings, skeleton, live border.</p>
+  </header>
+
+  <!-- ── Section 1: Interactive controls ──────────────────────── -->
+  <div class="controls-panel">
+    <h2>Controls</h2>
+    <div class="controls-row">
+
+      <div class="control-group">
+        <span class="control-label">Tab</span>
+        <div class="control-radios">
+          <label><input type="radio" name="tab" value="details" checked> Details</label>
+          <label><input type="radio" name="tab" value="session"> Session</label>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Movie</span>
+        <select class="control-select" id="ctrl-movie">
+          <option value="standard">standard</option>
+          <option value="longTitle">longTitle</option>
+          <option value="noDirector">noDirector</option>
+          <option value="withRatings">withRatings</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Session state</span>
+        <select class="control-select" id="ctrl-session">
+          <option value="none">none</option>
+          <option value="active">active</option>
+          <option value="past">past</option>
+        </select>
+      </div>
+
+      <div class="control-group control-checkbox">
+        <span class="control-label">Live border</span>
+        <label>
+          <input type="checkbox" id="ctrl-live">
+          movie-modal--live
+        </label>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Interactive preview -->
+  <div class="preview-section">
+    <h2>Interactive Preview</h2>
+    <div class="modal-frame">
+      <div class="movie-modal" id="interactive-modal">
+        <button class="movie-modal-close" aria-label="Close">✕</button>
+        <div class="movie-modal-body" id="interactive-modal-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <hr style="border: none; border-top: 1px solid #222; max-width: 900px; margin-bottom: 48px;">
+
+  <!-- ── Section 2: Permutations gallery ───────────────────────── -->
+  <div class="gallery" id="gallery"></div>
+
+  <!-- ── Scripts ──────────────────────────────────────────────── -->
+  <script src="./fixtures.js"></script>
+  <script src="../components/modal.js"></script>
+
+  <script>
+    // ── Stub ────────────────────────────────────────────────────
+    function watchTonight(movie) { alert('watchTonight: ' + movie.title); }
+
+    // ── Mock API data ───────────────────────────────────────────
+    const mockApiData = {
+      poster: Fixtures.movies.standard.poster,
+      genres: ['Crime', 'Drama'],
+      tagline: 'There was a time when we loved each other.',
+      plot: 'A former Prohibition-era Jewish gangster returns to the Lower East Side of Manhattan over thirty years later.',
+      imdb_rating: '8.3',
+      rt_score: '86%',
+      imdb_id: 'tt0089361',
+      runtime: '229',
+      cast: [
+        { name: 'Robert De Niro', character: "David 'Noodles' Aaronson", photo: 'https://image.tmdb.org/t/p/w185/cT8htcckIuyI1Lqwt1CvD02ynTh.jpg' },
+        { name: 'James Woods', character: 'Maximilian Max Bercovicz', photo: 'https://image.tmdb.org/t/p/w185/fJBDP7PBMsHMbTMpKLhXSVVIrwv.jpg' },
+      ],
+      crew: { cinematography: 'Tonino Delli Colli', original_music: 'Ennio Morricone', screenplay: 'Sergio Leone', editor: 'Nino Baragli' },
+    };
+
+    // Adapt crew object to keyCrew array format expected by renderModal
+    function makeApiData(baseMovie) {
+      const d = Object.assign({}, mockApiData);
+      d.poster = baseMovie.poster;
+      if (!d.keyCrew) {
+        d.keyCrew = [
+          { role: 'Cinematography', name: 'Tonino Delli Colli', wiki: '#' },
+          { role: 'Original Music', name: 'Ennio Morricone', wiki: '#' },
+          { role: 'Screenplay', name: 'Sergio Leone', wiki: '#' },
+          { role: 'Editor', name: 'Nino Baragli', wiki: '#' },
+        ];
+      }
+      return d;
+    }
+
+    // ── Session helpers ─────────────────────────────────────────
+    function makeSessionOptions(sessionState, movieTitle) {
+      // active session is keyed to 'Burden of Dreams'; for other movies we return null
+      const activeRaw = Fixtures.sessions.active;
+      const pastRaw   = Fixtures.sessions.past;
+
+      return {
+        onWatchTonight: watchTonight,
+        getActiveSessions: () => {
+          if (sessionState !== 'active') return null;
+          // Return an active session matching whatever movie we're showing
+          return Object.assign({}, activeRaw, { title: movieTitle });
+        },
+        getPastSessions: () => {
+          if (sessionState === 'past') {
+            return [Object.assign({}, pastRaw, { title: movieTitle })];
+          }
+          if (sessionState === 'active') {
+            // Active session also exposes its data via getPastSessions for some views
+            return [];
+          }
+          return [];
+        },
+      };
+    }
+
+    // ── Interactive render ──────────────────────────────────────
+    function renderInteractive() {
+      const tabVal     = document.querySelector('input[name="tab"]:checked').value;
+      const movieKey   = document.getElementById('ctrl-movie').value;
+      const sessionKey = document.getElementById('ctrl-session').value;
+      const isLive     = document.getElementById('ctrl-live').checked;
+
+      const movie    = Fixtures.movies[movieKey];
+      const apiData  = makeApiData(movie);
+      const options  = makeSessionOptions(sessionKey, movie.title);
+      options.initialTab = tabVal;
+
+      const modalEl = document.getElementById('interactive-modal');
+      const body    = document.getElementById('interactive-modal-body');
+
+      modalEl.classList.toggle('movie-modal--live', isLive);
+      ModalComponent.renderModal(body, movie, apiData, options);
+    }
+
+    // Wire controls
+    document.querySelectorAll('input[name="tab"]').forEach(el => el.addEventListener('change', renderInteractive));
+    document.getElementById('ctrl-movie').addEventListener('change', renderInteractive);
+    document.getElementById('ctrl-session').addEventListener('change', renderInteractive);
+    document.getElementById('ctrl-live').addEventListener('change', renderInteractive);
+
+    // ── Permutations gallery ─────────────────────────────────────
+    function makePermutation(labelText, movie, apiData, options, modifiers) {
+      const section = document.createElement('div');
+      section.className = 'gallery-section';
+
+      const label = document.createElement('div');
+      label.className = 'gallery-label';
+      label.textContent = labelText;
+      section.appendChild(label);
+
+      const frame = document.createElement('div');
+      frame.className = 'modal-frame';
+
+      const modalEl = document.createElement('div');
+      modalEl.className = 'movie-modal';
+      if (modifiers && modifiers.live) modalEl.classList.add('movie-modal--live');
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'movie-modal-close';
+      closeBtn.setAttribute('aria-label', 'Close');
+      closeBtn.textContent = '✕';
+
+      const body = document.createElement('div');
+      body.className = 'movie-modal-body';
+
+      modalEl.append(closeBtn, body);
+      frame.appendChild(modalEl);
+      section.appendChild(frame);
+
+      if (modifiers && modifiers.skeleton) {
+        // Render the loading skeleton HTML directly
+        const std = Fixtures.movies.standard;
+        body.innerHTML = `
+          <div class="mm-poster-col">
+            <img class="mm-poster" src="${std.poster}" alt="${std.title}">
+            <div class="mm-ratings">
+              <div class="mm-loading-bar mm-skel-rating"></div>
+              <div class="mm-loading-bar mm-skel-rating"></div>
+            </div>
+          </div>
+          <div class="mm-info">
+            <div class="mm-title">${std.title}</div>
+            <div class="mm-meta">${[std.director, std.year].filter(Boolean).join(' · ')}</div>
+            <div class="mm-tabs mm-tabs-skel">
+              <div class="mm-tab mm-tab-active">Details</div>
+              <div class="mm-tab">Session</div>
+            </div>
+            <div class="mm-genres">
+              <div class="mm-loading-bar mm-skel-tag"></div>
+              <div class="mm-loading-bar mm-skel-tag"></div>
+              <div class="mm-loading-bar mm-skel-tag"></div>
+            </div>
+            <div class="mm-loading-bar mm-skel-tagline"></div>
+            <div class="mm-loading-bar" style="margin-top:16px"></div>
+            <div class="mm-loading-bar" style="width:95%;margin-top:6px"></div>
+            <div class="mm-loading-bar" style="width:88%;margin-top:6px"></div>
+            <div class="mm-loading-bar" style="width:80%;margin-top:6px"></div>
+            <div class="mm-loading-bar" style="width:60%;margin-top:6px"></div>
+            <div class="mm-section-label mm-skel-label"></div>
+            <div class="mm-cast">
+              ${Array(7).fill('<div class="mm-cast-item"><div class="mm-cast-photo mm-skel-circle"></div><div class="mm-loading-bar mm-skel-cast-name"></div><div class="mm-loading-bar mm-skel-cast-char"></div></div>').join('')}
+            </div>
+            <div class="mm-section-label mm-skel-label"></div>
+            <div class="mm-crew">
+              ${Array(4).fill('<div class="mm-crew-row"><div class="mm-loading-bar mm-skel-crew-role"></div><div class="mm-loading-bar mm-skel-crew-name"></div></div>').join('')}
+            </div>
+          </div>`;
+      } else {
+        ModalComponent.renderModal(body, movie, apiData, options);
+      }
+
+      return section;
+    }
+
+    const gallery = document.getElementById('gallery');
+    const stdMovie   = Fixtures.movies.standard;
+    const stdData    = makeApiData(stdMovie);
+    const noOptions  = { onWatchTonight: watchTonight, getActiveSessions: () => null, getPastSessions: () => [] };
+
+    const permutations = [
+      // 1. Details tab — standard movie
+      () => makePermutation(
+        '1 — Details tab · loaded state (standard movie)',
+        stdMovie,
+        stdData,
+        Object.assign({ initialTab: 'details' }, noOptions)
+      ),
+
+      // 2. Details tab — long title
+      () => makePermutation(
+        '2 — Details tab · long title',
+        Fixtures.movies.longTitle,
+        makeApiData(Fixtures.movies.longTitle),
+        Object.assign({ initialTab: 'details' }, noOptions)
+      ),
+
+      // 3. Details tab — no director
+      () => makePermutation(
+        '3 — Details tab · no director',
+        Fixtures.movies.noDirector,
+        makeApiData(Fixtures.movies.noDirector),
+        Object.assign({ initialTab: 'details' }, noOptions)
+      ),
+
+      // 4. Session tab — active session in progress
+      () => makePermutation(
+        '4 — Session tab · active session in progress',
+        stdMovie,
+        stdData,
+        Object.assign(
+          { initialTab: 'session' },
+          makeSessionOptions('active', stdMovie.title)
+        )
+      ),
+
+      // 5. Session tab — past session with facts + chat
+      () => makePermutation(
+        '5 — Session tab · past session with facts + chat',
+        stdMovie,
+        stdData,
+        Object.assign(
+          { initialTab: 'session' },
+          makeSessionOptions('past', stdMovie.title)
+        )
+      ),
+
+      // 6. Session tab — no session (empty state)
+      () => makePermutation(
+        '6 — Session tab · no session (empty state)',
+        stdMovie,
+        stdData,
+        Object.assign({ initialTab: 'session' }, noOptions)
+      ),
+
+      // 7. Loading skeleton
+      () => makePermutation(
+        '7 — Loading skeleton',
+        stdMovie,
+        stdData,
+        Object.assign({ initialTab: 'details' }, noOptions),
+        { skeleton: true }
+      ),
+
+      // 8. Live border — Details tab + movie-modal--live
+      () => makePermutation(
+        '8 — Live border state · Details tab + movie-modal--live',
+        stdMovie,
+        stdData,
+        Object.assign({ initialTab: 'details' }, noOptions),
+        { live: true }
+      ),
+    ];
+
+    function buildGallery() {
+      permutations.forEach(fn => gallery.appendChild(fn()));
+    }
+
+    Fixtures.init().then(() => {
+      renderInteractive();
+      buildGallery();
+    });
+  </script>
+
+</body>
+</html>
