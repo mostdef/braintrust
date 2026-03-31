@@ -15,6 +15,28 @@
 - Added keyboard shortcut `[` / `]` to switch between Details and Session tabs without reaching for the mouse
 - Pressing `]` on the last tab wraps around to the first (and vice versa for `[`)
 
+### Now Watching — Animations
+- Pill → panel: the widget now expands from the bottom-right corner with a scale + fade entrance instead of appearing instantly
+- Panel → pill: the panel exits with a matching scale + fade before the pill animates back in
+- Panel → companion: the widget container expands from 320px to 700px over 320ms as the companion panel slides in from the right — no more layout jump
+- Companion → panel: the companion slides out to the right while the container contracts simultaneously; class is removed only after both animations complete
+- Open Companion button fades and scales down before being hidden when the companion opens
+- All transitions respect `prefers-reduced-motion`
+
+### Now Watching — Companion Polish
+- Chat send button brightens to full gold when there is text in the input, and dims when the field is empty
+- Chat input focus shows a warm gold glow ring instead of a plain border change
+- Typing indicator dots are now amber instead of white — consistent with the companion's gold palette
+- Incoming assistant responses flash a brief golden border shimmer before settling
+- Fact timestamps now show a small `◼` film-frame mark before the percentage — reinforces the cinematic tone
+- Spoiler toggle pops with a subtle scale on activation
+
+### Session Indicator
+- Cards for films you've previously watched during a session now show a small dot on the poster — a quiet signal that you have history with this film
+
+### Admin Dashboard
+- New userbase dashboard accessible from Settings → Admin — shows account-level activity for operational visibility
+
 ---
 
 ## Latest — 2026-03-30

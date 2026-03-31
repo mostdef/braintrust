@@ -653,10 +653,12 @@ function render(list) {
   const standardTitles = new Set(loadStandards().map(m => m.title));
   const nwData = loadNowWatching();
   const liveTitle = nwData ? nwData.title : null;
+  const sessionedTitles = getSessionedTitles();
   list.filter(movie => !standardTitles.has(movie.title)).forEach(movie => {
     const card = CardComponent.renderCard(movie, {
       view: 'collection',
       isLive: movie.title === liveTitle,
+      hasSession: sessionedTitles.has(movie.title.toLowerCase()),
       onStarClick: () => {
         const ok = toggleStandard(movie);
         if (ok !== false) { render(sortedList(movies, 'collection')); applyGrain(); }
@@ -1734,10 +1736,12 @@ function renderWatchlistGrid() {
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('watchlist'); return; }
   const _nwWL = loadNowWatching(); const _liveTitleWL = _nwWL ? _nwWL.title : null;
+  const _sessionedWL = getSessionedTitles();
   list.forEach(movie => {
     const card = CardComponent.renderCard(movie, {
       view: 'watchlist',
       isLive: movie.title === _liveTitleWL,
+      hasSession: _sessionedWL.has(movie.title.toLowerCase()),
       onRemove: () => {
         saveSnapshot(`Before removing "${movie.title}" from To Watch`);
         const prev = loadWatchlist();
@@ -1765,10 +1769,12 @@ function renderBannedGrid() {
   g.innerHTML = '';
   if (!banned.length) { showEmptyState(g); markClean('banned'); return; }
   const _nwBN = loadNowWatching(); const _liveTitleBN = _nwBN ? _nwBN.title : null;
+  const _sessionedBN = getSessionedTitles();
   banned.forEach(movie => {
     const card = CardComponent.renderCard(movie, {
       view: 'banned',
       isLive: movie.title === _liveTitleBN,
+      hasSession: _sessionedBN.has(movie.title.toLowerCase()),
       onRemove: () => {
         saveSnapshot(`Before removing "${movie.title}" from Don't Recommend`);
         const prev = loadBanned();
@@ -1796,10 +1802,12 @@ function renderMaybeGrid() {
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('maybe'); return; }
   const _nwMB = loadNowWatching(); const _liveTitleMB = _nwMB ? _nwMB.title : null;
+  const _sessionedMB = getSessionedTitles();
   list.forEach(movie => {
     const card = CardComponent.renderCard(movie, {
       view: 'maybe',
       isLive: movie.title === _liveTitleMB,
+      hasSession: _sessionedMB.has(movie.title.toLowerCase()),
       onRemove: () => {
         saveSnapshot(`Before removing "${movie.title}" from Wildcard`);
         const prev = loadMaybe();
@@ -1827,10 +1835,12 @@ function renderMehGrid() {
   g.innerHTML = '';
   if (!list.length) { showEmptyState(g); markClean('meh'); return; }
   const _nwMH = loadNowWatching(); const _liveTitleMH = _nwMH ? _nwMH.title : null;
+  const _sessionedMH = getSessionedTitles();
   list.forEach(movie => {
     const card = CardComponent.renderCard(movie, {
       view: 'meh',
       isLive: movie.title === _liveTitleMH,
+      hasSession: _sessionedMH.has(movie.title.toLowerCase()),
       onRemove: () => {
         saveSnapshot(`Before removing "${movie.title}" from Meh`);
         const prev = loadMeh();
@@ -1966,7 +1976,7 @@ function openMovieModal(movie, list = null) {
       <div class="mm-loading-bar mm-skel-watch-btn"></div>
     </div>
     <div class="mm-info">
-      <div class="mm-info-header">
+      <div class="mm-info-header mm-info-header--no-shadow">
         <div class="mm-title-row"><div class="mm-title">${movie.title}</div></div>
         <div class="mm-meta">${[movie.director, movie.year].filter(Boolean).join(' · ')}</div>
         <div class="mm-tabs mm-tabs-skel">
@@ -2016,6 +2026,13 @@ function openMovieModal(movie, list = null) {
 
 function mmNormalizeTitle(t) {
   return (t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function getSessionedTitles() {
+  try {
+    const signals = JSON.parse(localStorage.getItem(TASTE_SIGNALS_KEY) || '[]');
+    return new Set(signals.map(s => (s.title || '').toLowerCase()).filter(Boolean));
+  } catch { return new Set(); }
 }
 
 function mmGetSessions(title) {
@@ -2288,6 +2305,20 @@ function nwwStopInterval() {
   if (nww.interval) { clearInterval(nww.interval); nww.interval = null; }
 }
 
+function nwwCollapseToPill() {
+  const panel = document.getElementById('nww-panel');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!panel || reducedMotion) { nwwSetState('playing'); return; }
+  panel.style.animation = 'nww-panel-out 0.18s cubic-bezier(0.23, 1, 0.32, 1) both';
+  setTimeout(() => {
+    nwwSetState('playing'); // display:none on panel, display:flex on pill
+    const pill = nww.pill;
+    void pill.offsetHeight;  // force reflow so browser registers the flex state before animating
+    pill.style.animation = 'nww-pill-in 0.2s cubic-bezier(0.23, 1, 0.32, 1) both';
+    pill.addEventListener('animationend', () => { pill.style.animation = ''; }, { once: true });
+  }, 170);
+}
+
 function nwwPopulatePlaying(data) {
   nww.poster.src = data.poster || '';
   nww.poster.alt = data.title;
@@ -2442,7 +2473,7 @@ function nwwAppendFact(fact, highlight = false) {
 
 function nwwAppendChatBubble(role, content, animate = true) {
   const msg = document.createElement('div');
-  msg.className = `nww-msg nww-msg-${role}${!animate ? ' no-anim' : ''}`;
+  msg.className = `nww-msg nww-msg-${role}${!animate ? ' no-anim' : ''}${role === 'assistant' && animate ? ' nww-msg-assistant-new' : ''}`;
   const bubble = document.createElement('div');
   bubble.className = 'nww-msg-bubble';
   bubble.textContent = content;
@@ -2574,6 +2605,7 @@ async function nwwSendChat(message) {
   if (!data?.companion) return;
 
   nww.chatInput.value = '';
+  nww.chatInput.closest('.nww-chat-input-area')?.classList.remove('has-content');
   nww.chatSend.disabled = true;
   nwwAppendChatBubble('user', message);
   const typingEl = nwwAppendTyping();
@@ -2672,14 +2704,55 @@ nww.companionOpenBtn.addEventListener('click', () => {
     data.companion = nwwDefaultCompanion();
     saveNowWatching(data);
   }
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Button exit
+  if (!reducedMotion) {
+    const btn = nww.companionOpenBtn;
+    btn.style.transition = 'opacity 0.12s ease-in, transform 0.12s cubic-bezier(0.23, 1, 0.32, 1)';
+    btn.style.opacity = '0';
+    btn.style.transform = 'scale(0.94) translateY(2px)';
+  }
+
   nwwSetCompanionOpen(true);
   nwwRenderCompanion(loadNowWatching());
   if (!data.companion.facts_fetched && !data.companion.facts_loading) {
     nwwFetchFacts(loadNowWatching());
   }
+
+  if (reducedMotion) return;
+
+  // Container width 320 → 700 animated
+  nww.el.style.width = '320px';
+  void nww.el.offsetHeight;
+  nww.el.style.transition = 'width 0.32s cubic-bezier(0.23, 1, 0.32, 1)';
+  nww.el.style.width = '700px';
+  setTimeout(() => {
+    nww.el.style.transition = '';
+    nww.el.style.width = '';
+    const btn = nww.companionOpenBtn;
+    btn.style.transition = '';
+    btn.style.opacity = '';
+    btn.style.transform = '';
+  }, 340);
 });
 
-nww.companionClose.addEventListener('click', () => nwwSetCompanionOpen(false));
+nww.companionClose.addEventListener('click', () => {
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reducedMotion) { nwwSetCompanionOpen(false); return; }
+
+  // Companion panel slides out right while container shrinks
+  nww.companionPanel.style.animation = 'nww-companion-out 0.22s cubic-bezier(0.23, 1, 0.32, 1) both';
+  nww.el.style.transition = 'width 0.28s cubic-bezier(0.23, 1, 0.32, 1)';
+  nww.el.style.width = '320px';
+  setTimeout(() => {
+    nww.companionPanel.style.animation = '';
+    nww.el.style.transition = '';
+    nww.el.style.width = '';
+    nwwSetCompanionOpen(false);
+  }, 270);
+});
 
 nww.companionSpoiler.addEventListener('change', () => {
   const data = loadNowWatching();
@@ -2701,6 +2774,11 @@ nww.companionSpoiler.addEventListener('change', () => {
 nww.chatSend.addEventListener('click', () => {
   const msg = nww.chatInput.value.trim();
   if (msg) nwwSendChat(msg);
+});
+
+nww.chatInput.addEventListener('input', () => {
+  const area = nww.chatInput.closest('.nww-chat-input-area');
+  if (area) area.classList.toggle('has-content', nww.chatInput.value.trim().length > 0);
 });
 
 nww.chatInput.addEventListener('keydown', (e) => {
@@ -2846,8 +2924,18 @@ nww.pill.addEventListener('click', () => {
   const data = loadNowWatching();
   if (!data) return;
   nwwPopulatePlaying(data);
-  nwwSetState('expanded');
-  nwwUpdateDisplay();
+  // Animate pill out before switching state
+  const pill = nww.pill;
+  pill.style.transition = 'opacity 0.12s ease-out, transform 0.12s cubic-bezier(0.23, 1, 0.32, 1)';
+  pill.style.opacity = '0';
+  pill.style.transform = 'scale(0.96) translateY(2px)';
+  setTimeout(() => {
+    pill.style.transition = '';
+    pill.style.opacity = '';
+    pill.style.transform = '';
+    nwwSetState('expanded');
+    nwwUpdateDisplay();
+  }, 110);
 });
 
 nww.pauseBtn.addEventListener('click', () => {
@@ -2910,7 +2998,7 @@ document.addEventListener('click', (e) => {
     if (!nww.el.contains(e.target)) {
       const data = loadNowWatching();
       if (data && nww.state === 'expanded') {
-        nwwSetState('playing');
+        nwwCollapseToPill();
       } else if (nww.state === 'searching') {
         nwwSetState('idle');
       }

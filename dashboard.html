@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Collection — Userbase Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Oswald:wght@500;700&family=Playfair+Display:wght@800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <a href="/movies.html" class="site-title">The Collection</a>
+    <nav>
+      <a href="/settings.html" class="nav-link">Settings</a>
+      <a href="/dashboard" class="nav-link active">Dashboard</a>
+    </nav>
+  </header>
+
+  <main class="dashboard-main">
+    <section class="dashboard-hero">
+      <div class="dashboard-hero-copy">
+        <div class="dashboard-kicker">Internal Overview</div>
+        <h1 class="dashboard-title">Userbase State</h1>
+        <p class="dashboard-subtitle">
+          A private operational view of account activity, collection depth, and feature adoption across The Collection.
+        </p>
+      </div>
+      <div class="dashboard-hero-meta">
+        <div class="dashboard-meta-card">
+          <div class="dashboard-meta-label">Admin</div>
+          <div class="dashboard-meta-value" id="admin-email">Loading…</div>
+        </div>
+        <div class="dashboard-meta-card">
+          <div class="dashboard-meta-label">Generated</div>
+          <div class="dashboard-meta-value" id="generated-at">—</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="dashboard-notice" id="dashboard-notice" hidden></section>
+
+    <section class="dashboard-summary-grid" id="summary-grid">
+      <div class="dashboard-skeleton-card"></div>
+      <div class="dashboard-skeleton-card"></div>
+      <div class="dashboard-skeleton-card"></div>
+      <div class="dashboard-skeleton-card"></div>
+      <div class="dashboard-skeleton-card"></div>
+      <div class="dashboard-skeleton-card"></div>
+    </section>
+
+    <section class="dashboard-detail-grid">
+      <section class="dashboard-panel">
+        <div class="dashboard-panel-header">
+          <div>
+            <div class="dashboard-panel-kicker">Coverage</div>
+            <h2 class="dashboard-panel-title">Adoption Notes</h2>
+          </div>
+        </div>
+        <div class="dashboard-note-list" id="dashboard-notes">
+          <div class="dashboard-empty">Loading dashboard notes…</div>
+        </div>
+      </section>
+
+      <section class="dashboard-panel dashboard-panel-table">
+        <div class="dashboard-panel-header">
+          <div>
+            <div class="dashboard-panel-kicker">Accounts</div>
+            <h2 class="dashboard-panel-title">Recent Users</h2>
+          </div>
+        </div>
+        <div class="dashboard-table-wrap">
+          <table class="dashboard-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Updated</th>
+                <th>Collection</th>
+                <th>Watchlist</th>
+                <th>Items</th>
+                <th>Snapshots</th>
+                <th>Taste</th>
+                <th>Cost</th>
+              </tr>
+            </thead>
+            <tbody id="recent-users-body">
+              <tr><td colspan="8" class="dashboard-empty-cell">Loading recent users…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script defer src="/auth.js"></script>
+  <script defer src="/dashboard-app.js"></script>
+</body>
+</html>

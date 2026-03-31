@@ -108,9 +108,10 @@ const CardComponent = (() => {
 
   function renderCard(movie, options) {
     const {
-      view       = 'collection',
-      isLive     = false,
-      onRemove   = null,
+      view        = 'collection',
+      isLive      = false,
+      hasSession  = false,
+      onRemove    = null,
       onStarClick = null,
       onCardClick = null,
     } = options || {};
@@ -121,6 +122,7 @@ const CardComponent = (() => {
     card.dataset.title = movie.title;
     card.dataset.view = view;
     if (isLive) card.classList.add('movie-card--live');
+    if (hasSession) card.classList.add('movie-card--sessioned');
 
     // Poster wrap
     const posterWrap = document.createElement('div');

@@ -3,6 +3,7 @@
   "routes": [
     { "src": "/sandbox(.*)", "dest": "/404.html" },
     { "src": "/", "dest": "/movies.html" },
-    { "src": "/auth/callback", "dest": "/auth-callback.html" }
+    { "src": "/auth/callback", "dest": "/auth-callback.html" },
+    { "src": "/dashboard", "dest": "/dashboard.html" }
   ]
 }
