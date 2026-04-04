@@ -2,6 +2,28 @@
 
 ---
 
+## Latest — 2026-04-04
+
+### Now Watching — Pill Animations
+- Pill lifts slightly on hover and compresses on press — subtle tactile feedback
+- Entry animation fires exactly once when transitioning to player view, gated behind a one-shot class so window resize and layout recalculations can't restart it
+- Fixed a blink that occurred when the pill transitioned to the player view: the entry animation was previously bound to the steady-state selector, causing it to replay on any layout change
+
+### Now Watching — Widget Stability
+- Fixed the widget randomly disappearing after a few interactions — stale animation callbacks were racing each other and leaving the widget visually hidden after state changes
+- Panel visibility now driven by a single state attribute instead of scattered inline style writes, eliminating the race condition
+- Collapsing to pill now correctly clears companion state so the widget can't restore in the wrong layout after reload
+
+### Card Hover Effect
+- Tilt effect now responds immediately on mouseenter, not just mousemove
+- RAF loop properly cancelled on mouseleave — no more residual frame after cursor exits
+- Restored a regression where the `mousemove` tilt calculation had been stripped, leaving cards with only a CSS class hover instead of the full 3D perspective tilt
+
+### Bug Fixes
+- Restored rotating gradient border on live cards and the pill — broken by `transform-style: preserve-3d` being incorrectly added to `.movie-card`, which caused browsers to silently ignore `overflow: hidden` and break `background-clip: border-box`
+
+---
+
 ## Latest — 2026-03-31
 
 ### Now Watching — Companion Open Animation

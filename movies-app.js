@@ -1672,18 +1672,35 @@ function buildNavButtons(container, compact = false) {
   const activeBtn = tabRow.querySelector('.grid-nav-btn.active');
   const slider = tabRow.querySelector('.grid-nav-slider');
   if (activeBtn && slider) {
+    const nextLeft = activeBtn.offsetLeft;
+    const nextWidth = activeBtn.offsetWidth;
+
     if (!slider.dataset.init) {
       slider.style.transition = 'none';
-      requestAnimationFrame(() => {
-        slider.style.left  = activeBtn.offsetLeft + 'px';
-        slider.style.width = activeBtn.offsetWidth + 'px';
-        slider.dataset.init = '1';
-        requestAnimationFrame(() => { slider.style.transition = ''; });
-      });
+      slider.style.transform = 'none';
+      slider.style.left = nextLeft + 'px';
+      slider.style.width = nextWidth + 'px';
+      slider.dataset.init = '1';
+      slider.dataset.left = String(nextLeft);
+      slider.dataset.width = String(nextWidth);
+      requestAnimationFrame(() => { slider.style.transition = ''; });
     } else {
+      const prevLeft = Number(slider.dataset.left || nextLeft);
+      const prevWidth = Number(slider.dataset.width || nextWidth);
+      const scaleX = prevWidth > 0 ? prevWidth / nextWidth : 1;
+      const translateX = prevLeft - nextLeft;
+
+      slider.style.transition = 'none';
+      slider.style.left = nextLeft + 'px';
+      slider.style.width = nextWidth + 'px';
+      slider.style.transformOrigin = 'left center';
+      slider.style.transform = `translateX(${translateX}px) scaleX(${scaleX})`;
+      slider.dataset.left = String(nextLeft);
+      slider.dataset.width = String(nextWidth);
+
       requestAnimationFrame(() => {
-        slider.style.left  = activeBtn.offsetLeft + 'px';
-        slider.style.width = activeBtn.offsetWidth + 'px';
+        slider.style.transition = '';
+        slider.style.transform = 'none';
       });
     }
   }
@@ -2182,7 +2199,10 @@ const nww = {
   companionFooter:    document.getElementById('nww-companion-footer'),
   interval: null,
   searchDebounce: null,
-  state: 'idle' // idle | searching | playing | expanded | deciding
+  state: 'idle', // idle | searching | playing | expanded | deciding
+  playingView: 'controls',
+  transitionTimers: [],
+  transitionToken: 0
 };
 
 function nwwFormatTime(ms) {
@@ -2256,9 +2276,77 @@ function clearNowWatching() {
   localStorage.removeItem(NOW_WATCHING_KEY);
 }
 
+function nwwClearTransitionTimers() {
+  nww.transitionTimers.forEach(clearTimeout);
+  nww.transitionTimers = [];
+}
+
+function nwwResetTransientStyles() {
+  nww.el.style.transition = '';
+  nww.el.style.transform = '';
+  nww.el.style.transformOrigin = '';
+  nww.el.style.width = '';
+  nww.el.style.height = '';
+  nww.el.style.overflow = '';
+  nww.el.classList.remove('nww--suppress-enter');
+  nww.el.classList.remove('nww--pill-enter');
+
+  nww.panel.style.transition = '';
+  nww.panel.style.opacity = '';
+  nww.panel.style.transform = '';
+  nww.panel.style.height = '';
+  nww.panel.style.pointerEvents = '';
+  nww.panel.style.removeProperty('animation');
+
+  nww.pill.style.transition = '';
+  nww.pill.style.opacity = '';
+  nww.pill.style.transform = '';
+  nww.pill.style.position = '';
+  nww.pill.style.right = '';
+  nww.pill.style.bottom = '';
+  nww.pill.style.pointerEvents = '';
+  nww.pill.style.zIndex = '';
+  nww.pill.style.display = '';
+
+  nww.companionPanel.style.animation = '';
+  nww.companionOpenBtn.style.transition = '';
+  nww.companionOpenBtn.style.opacity = '';
+  nww.companionOpenBtn.style.transform = '';
+}
+
+function nwwCancelTransitions() {
+  nww.transitionToken += 1;
+  nwwClearTransitionTimers();
+  nwwResetTransientStyles();
+}
+
+function nwwBeginTransition() {
+  nwwCancelTransitions();
+  return nww.transitionToken;
+}
+
+function nwwQueueTransition(token, delay, fn) {
+  const timer = setTimeout(() => {
+    nww.transitionTimers = nww.transitionTimers.filter(id => id !== timer);
+    if (token !== nww.transitionToken) return;
+    fn();
+  }, delay);
+  nww.transitionTimers.push(timer);
+  return timer;
+}
+
+function nwwSetPlayingView(view) {
+  nww.playingView = view;
+  nww.controls.style.display = '';
+  nww.decisions.style.display = '';
+  nww.confirmation.style.display = '';
+  nww.el.dataset.playingView = view;
+}
+
 function nwwSetState(state) {
   nww.state = state;
   nww.el.className = 'nww nww--' + state;
+  nww.el.dataset.playingView = nww.playingView;
   // Add paused modifier when playing but paused
   const data = loadNowWatching();
   if (state === 'playing' && data && data.pausedAt) {
@@ -2305,18 +2393,94 @@ function nwwStopInterval() {
   if (nww.interval) { clearInterval(nww.interval); nww.interval = null; }
 }
 
+function nwwTriggerPillEnter() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (nww.state !== 'playing') return;
+
+  nww.el.classList.remove('nww--pill-enter');
+
+  requestAnimationFrame(() => {
+    if (nww.state !== 'playing') return;
+    nww.el.classList.add('nww--pill-enter');
+    nww.pill.addEventListener('animationend', () => {
+      nww.el.classList.remove('nww--pill-enter');
+    }, { once: true });
+  });
+}
+
+function nwwAnimateWidgetFlip(mutator, duration = 320, token = nww.transitionToken) {
+  const first = nww.el.getBoundingClientRect();
+  mutator();
+  const last = nww.el.getBoundingClientRect();
+
+  if (!first.width || !first.height || !last.width || !last.height) return;
+
+  const dx = first.left - last.left;
+  const dy = first.top - last.top;
+  const sx = first.width / last.width;
+  const sy = first.height / last.height;
+  const originX = 100;
+  const originY = 100;
+
+  nww.el.style.transformOrigin = `${originX}% ${originY}%`;
+  nww.el.style.transition = 'none';
+  nww.el.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+  void nww.el.offsetHeight;
+  nww.el.style.transition = `transform ${duration}ms cubic-bezier(0.23, 1, 0.32, 1)`;
+  nww.el.style.transform = '';
+
+  nwwQueueTransition(token, duration + 20, () => {
+    nww.el.style.transition = '';
+    nww.el.style.transform = '';
+    nww.el.style.transformOrigin = '';
+  });
+}
+
 function nwwCollapseToPill() {
-  const panel = document.getElementById('nww-panel');
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (!panel || reducedMotion) { nwwSetState('playing'); return; }
-  panel.style.animation = 'nww-panel-out 0.18s cubic-bezier(0.23, 1, 0.32, 1) both';
-  setTimeout(() => {
-    nwwSetState('playing'); // display:none on panel, display:flex on pill
-    const pill = nww.pill;
-    void pill.offsetHeight;  // force reflow so browser registers the flex state before animating
-    pill.style.animation = 'nww-pill-in 0.2s cubic-bezier(0.23, 1, 0.32, 1) both';
-    pill.addEventListener('animationend', () => { pill.style.animation = ''; }, { once: true });
-  }, 170);
+  if (reducedMotion) {
+    nwwCancelTransitions();
+    nwwSetState('playing');
+    return;
+  }
+  const token = nwwBeginTransition();
+
+  const pill = nww.pill;
+  const panel = nww.panel;
+
+  // Measure and lock container at current rendered size — whole pixels only
+  const rect = nww.el.getBoundingClientRect();
+  const lockedH = Math.round(rect.height);
+  const lockedW = Math.round(rect.width);
+  nww.el.style.overflow = 'hidden';
+  nww.el.style.width = lockedW + 'px';
+  nww.el.style.height = lockedH + 'px';
+  void nww.el.offsetHeight;
+
+  // Fade panel out and shrink container simultaneously
+  panel.style.transition = 'opacity 0.15s ease-out';
+  panel.style.opacity = '0';
+  nww.el.style.transition = 'height 0.26s cubic-bezier(0.23, 1, 0.32, 1), width 0.26s cubic-bezier(0.23, 1, 0.32, 1)';
+  nww.el.style.height = '48px';
+  nww.el.style.width = '280px';
+
+  // Once panel is invisible, switch state — pill emerges at top of still-shrinking container
+  nwwQueueTransition(token, 150, () => {
+    panel.style.transition = '';
+    panel.style.animation = ''; // clear animation:none left from expand transition
+    nwwSetState('playing');     // CSS: panel → display:none, pill → shown; golden border starts
+    nwwTriggerPillEnter();
+    panel.style.opacity = '';   // safe to clear now (panel is display:none)
+    pill.style.opacity = '0';
+    void pill.offsetHeight;
+    pill.style.transition = 'opacity 0.12s cubic-bezier(0.23, 1, 0.32, 1)';
+    pill.style.opacity = '1';
+  });
+
+  // Cleanup after container shrink completes
+  nwwQueueTransition(token, 270, () => {
+    nwwResetTransientStyles();
+  });
 }
 
 function nwwPopulatePlaying(data) {
@@ -2340,19 +2504,18 @@ function nwwPopulatePlaying(data) {
   nww.runtime.textContent = nwwFormatTime((data.runtime || 0) * 60000);
   nww.pillPoster.innerHTML = data.poster ? `<img src="${data.poster}" alt="">` : '';
   nww.pauseBtn.textContent = data.pausedAt ? 'Resume' : 'Pause';
-  nww.controls.style.display = '';
-  nww.decisions.style.display = 'none';
-  nww.confirmation.style.display = 'none';
+  nww.confirmation.textContent = '';
+  nwwSetPlayingView('controls');
   nww.el.classList.remove('nww--complete');
 }
 
 function nwwShowDecisions() {
-  nww.controls.style.display = 'none';
-  nww.decisions.style.display = '';
+  nwwSetPlayingView('decisions');
   nwwStopInterval();
 }
 
 function nwwActivate(movie, sourceView) {
+  nwwCancelTransitions();
   const runtimeMin = movie.runtime || 0;
   const data = {
     title: movie.title, year: movie.year, director: movie.director,
@@ -2364,6 +2527,7 @@ function nwwActivate(movie, sourceView) {
   saveNowWatching(data);
   nwwPopulatePlaying(data);
   nwwSetState('playing');
+  nwwTriggerPillEnter();
   nwwUpdateDisplay();
   nwwStartInterval();
 
@@ -2708,11 +2872,13 @@ nww.companionOpenBtn.addEventListener('click', () => {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   if (reducedMotion) {
+    nwwCancelTransitions();
     nwwSetCompanionOpen(true);
     nwwRenderCompanion(loadNowWatching());
     if (!data.companion.facts_fetched && !data.companion.facts_loading) nwwFetchFacts(loadNowWatching());
     return;
   }
+  const token = nwwBeginTransition();
 
   // Button exit
   const btn = nww.companionOpenBtn;
@@ -2720,61 +2886,65 @@ nww.companionOpenBtn.addEventListener('click', () => {
   btn.style.opacity = '0';
   btn.style.transform = 'scale(0.94) translateY(2px)';
 
-  // PHASE 1 — panel stretches to 620px; companion not yet shown
-  const startH = nww.panel.offsetHeight;
+  const startH = nww.panel.getBoundingClientRect().height;
   nww.panel.style.height = startH + 'px';
+  nww.panel.style.transition = 'height 0.28s cubic-bezier(0.23, 1, 0.32, 1)';
   void nww.panel.offsetHeight;
-  nww.panel.style.transition = 'height 0.32s cubic-bezier(0.23, 1, 0.32, 1)';
   nww.panel.style.height = '620px';
 
-  // PHASE 2 — class added here so nww-companion-in fires at exactly the right moment
-  setTimeout(() => {
+  nwwQueueTransition(token, 290, () => {
     nww.panel.style.transition = '';
 
-    // Lock width before class change prevents 700px flash
-    nww.el.style.width = '320px';
+    nwwAnimateWidgetFlip(() => {
+      nwwSetCompanionOpen(true);
+      nwwRenderCompanion(loadNowWatching());
+    }, 380, token);
 
-    nwwSetCompanionOpen(true);
-    nwwRenderCompanion(loadNowWatching());
-    if (!data.companion.facts_fetched && !data.companion.facts_loading) nwwFetchFacts(loadNowWatching());
-
-    // Panel push nudge
-    nww.panel.style.setProperty('animation', 'nww-panel-companion-push 0.38s cubic-bezier(0.23, 1, 0.32, 1) both', 'important');
+    nww.panel.style.setProperty('animation', 'nww-panel-companion-shift-left 0.34s cubic-bezier(0.23, 1, 0.32, 1) both', 'important');
     nww.panel.addEventListener('animationend', () => {
       nww.panel.style.removeProperty('animation');
-      nww.panel.style.height = '';  // release: align-items:stretch keeps it at 620px
+      nww.panel.style.height = '';
     }, { once: true });
 
-    // Container expands
-    void nww.el.offsetHeight;
-    nww.el.style.transition = 'width 0.32s cubic-bezier(0.23, 1, 0.32, 1)';
-    nww.el.style.width = '700px';
-    setTimeout(() => {
-      nww.el.style.transition = '';
-      nww.el.style.width = '';
-      btn.style.transition = '';
-      btn.style.opacity = '';
-      btn.style.transform = '';
-    }, 340);
-  }, 350);
+    if (!data.companion.facts_fetched && !data.companion.facts_loading) nwwFetchFacts(loadNowWatching());
+  });
+
+  nwwQueueTransition(token, 180, () => {
+    btn.style.transition = '';
+    btn.style.opacity = '';
+    btn.style.transform = '';
+  });
 });
 
 nww.companionClose.addEventListener('click', () => {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reducedMotion) { nwwSetCompanionOpen(false); return; }
-
-  // Companion exits left; playing panel bounces right as it's released
-  nww.companionPanel.style.animation = 'nww-companion-out 0.22s cubic-bezier(0.23, 1, 0.32, 1) both';
-  nww.panel.style.setProperty('animation', 'nww-panel-companion-release 0.28s cubic-bezier(0.23, 1, 0.32, 1) both', 'important');
-  nww.panel.addEventListener('animationend', () => nww.panel.style.removeProperty('animation'), { once: true });
-  nww.el.style.transition = 'width 0.28s cubic-bezier(0.23, 1, 0.32, 1)';
-  nww.el.style.width = '320px';
-  setTimeout(() => {
-    nww.companionPanel.style.animation = '';
-    nww.el.style.transition = '';
-    nww.el.style.width = '';
+  if (reducedMotion) {
+    nwwCancelTransitions();
     nwwSetCompanionOpen(false);
-  }, 270);
+    return;
+  }
+  const token = nwwBeginTransition();
+
+  nww.companionPanel.style.animation = 'nww-companion-drop-out 0.22s cubic-bezier(0.23, 1, 0.32, 1) both';
+  nww.panel.style.setProperty('animation', 'nww-panel-companion-shift-right 0.28s cubic-bezier(0.23, 1, 0.32, 1) both', 'important');
+  nww.panel.addEventListener('animationend', () => nww.panel.style.removeProperty('animation'), { once: true });
+
+  nwwQueueTransition(token, 220, () => {
+    nww.panel.style.height = nww.panel.getBoundingClientRect().height + 'px';
+    nwwAnimateWidgetFlip(() => {
+      nwwSetCompanionOpen(false);
+    }, 320, token);
+
+    nwwQueueTransition(token, 20, () => {
+      nww.companionPanel.style.animation = '';
+      nww.panel.style.transition = 'height 0.28s cubic-bezier(0.23, 1, 0.32, 1)';
+      nww.panel.style.height = '412px';
+      nwwQueueTransition(token, 300, () => {
+        nww.panel.style.transition = '';
+        nww.panel.style.height = '';
+      });
+    });
+  });
 });
 
 nww.companionSpoiler.addEventListener('change', () => {
@@ -2819,8 +2989,10 @@ nww.chatInput.addEventListener('keydown', (e) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function nwwToIdle() {
+  nwwCancelTransitions();
   nwwStopInterval();
   clearNowWatching();
+  nwwSetPlayingView('controls');
   nwwSetState('idle');
   nww.el.classList.remove('nww--complete', 'nww--companion-open');
   nwwRenderCompanion(null);
@@ -2863,13 +3035,11 @@ function nwwCommitDecision(target) {
 
   // Show confirmation
   const labels = { collection: 'Collection', meh: 'Meh', banned: "Don't Recommend" };
-  nww.decisions.style.display = 'none';
-  nww.controls.style.display = 'none';
   nww.confirmation.textContent = 'Added to ' + (labels[target] || target);
-  nww.confirmation.style.display = '';
   nww.confirmation.style.animation = 'none';
   nww.confirmation.offsetHeight; // force reflow to restart animation
   nww.confirmation.style.animation = '';
+  nwwSetPlayingView('confirmation');
   nwwSetState('deciding');
 
   setTimeout(nwwToIdle, 2000);
@@ -2936,6 +3106,7 @@ nww.searchInput.addEventListener('input', () => {
 
 // Event listeners
 nww.idleBtn.addEventListener('click', () => {
+  nwwCancelTransitions();
   nwwRenderQuickPicks();
   nww.searchInput.value = '';
   nww.searchResults.innerHTML = '';
@@ -2947,18 +3118,63 @@ nww.pill.addEventListener('click', () => {
   const data = loadNowWatching();
   if (!data) return;
   nwwPopulatePlaying(data);
-  // Animate pill out before switching state
-  const pill = nww.pill;
-  pill.style.transition = 'opacity 0.12s ease-out, transform 0.12s cubic-bezier(0.23, 1, 0.32, 1)';
-  pill.style.opacity = '0';
-  pill.style.transform = 'scale(0.96) translateY(2px)';
-  setTimeout(() => {
-    pill.style.transition = '';
-    pill.style.opacity = '';
-    pill.style.transform = '';
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reducedMotion) {
+    nwwCancelTransitions();
     nwwSetState('expanded');
     nwwUpdateDisplay();
-  }, 110);
+    return;
+  }
+  const token = nwwBeginTransition();
+
+  const pill = nww.pill;
+  const first = nww.el.getBoundingClientRect();
+
+  nww.el.classList.add('nww--suppress-enter');
+  nwwSetState('expanded');
+  nwwUpdateDisplay();
+
+  const panel = nww.panel;
+  const last = nww.el.getBoundingClientRect();
+  const dx = first.left - last.left;
+  const dy = first.top - last.top;
+  const sx = first.width / last.width;
+  const sy = first.height / last.height;
+  const originX = 100;
+  const originY = 100;
+
+  pill.style.display = 'flex';
+  pill.style.position = 'absolute';
+  pill.style.right = '0';
+  pill.style.bottom = '0';
+  pill.style.opacity = '1';
+  pill.style.pointerEvents = 'none';
+  pill.style.zIndex = '2';
+
+  panel.style.opacity = '0';
+  panel.style.transform = 'translateY(12px) scale(0.97)';
+  panel.style.pointerEvents = 'none';
+  panel.style.setProperty('animation', 'none', 'important');
+
+  nww.el.style.overflow = 'visible';
+  nww.el.style.transformOrigin = `${originX}% ${originY}%`;
+  nww.el.style.transition = 'none';
+  nww.el.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+  void nww.el.offsetHeight;
+
+  nww.el.style.transition = 'transform 0.3s cubic-bezier(0.23, 1, 0.32, 1)';
+  nww.el.style.transform = '';
+  pill.style.transition = 'opacity 0.18s ease-out, transform 0.18s cubic-bezier(0.23, 1, 0.32, 1)';
+  pill.style.opacity = '0';
+  pill.style.transform = 'scale(0.96)';
+  panel.style.transition = 'opacity 0.28s cubic-bezier(0.23, 1, 0.32, 1), transform 0.28s cubic-bezier(0.23, 1, 0.32, 1)';
+  panel.style.opacity = '1';
+  panel.style.transform = 'translateY(0) scale(1)';
+
+  nwwQueueTransition(token, 300, () => {
+    pill.style.opacity = '0';
+    nwwResetTransientStyles();
+  });
 });
 
 nww.pauseBtn.addEventListener('click', () => {
@@ -3056,6 +3272,7 @@ function watchTonight(movie, sourceView) {
 (function nwwRestore() {
   const data = loadNowWatching();
   if (!data) return;
+  nwwCancelTransitions();
   nwwPopulatePlaying(data);
   const elapsedMs = nwwGetElapsed(data);
   const runtimeMs = (data.runtime || 0) * 60000;

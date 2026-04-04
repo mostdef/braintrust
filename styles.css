@@ -571,7 +571,7 @@ main {
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.1), 0 1px 3px rgba(0,0,0,0.08);
-  transition: left 0.3s cubic-bezier(0.23, 1, 0.32, 1), width 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
   pointer-events: none;
   z-index: 0;
 }
@@ -1653,14 +1653,20 @@ main {
   position: relative;
   background: #fff;
   box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-  will-change: transform;
   border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;
   overflow: hidden;
+  transition: transform 0.18s ease-out, box-shadow 0.18s ease-out;
 }
 
 .movie-card {
   gap: 8px;
+}
+
+.movie-card--interactive:hover,
+.movie-card--interactive:focus-within {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.16);
 }
 
 .movie-card .card-info {
@@ -1744,6 +1750,12 @@ main {
   opacity: 0;
   transition: opacity 0.3s ease;
   z-index: 2;
+  background: linear-gradient(135deg, rgba(255,255,255,0.18), transparent 42%, rgba(255,255,255,0.08) 72%, transparent);
+}
+
+.movie-card--interactive:hover .card-sheen,
+.movie-card--interactive:focus-within .card-sheen {
+  opacity: 1;
 }
 
 .card-info {
@@ -3050,6 +3062,9 @@ main {
   cursor: pointer;
   position: relative;
   overflow: hidden;
+  transform: translateY(0) scale(1);
+  transform-origin: center;
+  transition: transform 0.18s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.18s ease-out;
 }
 .nww--playing .nww-pill {
   background:
@@ -3072,10 +3087,27 @@ main {
     drop-shadow(0 0 8px rgba(220, 160, 20, 0.75))
     drop-shadow(0 0 18px rgba(200, 120, 10, 0.45));
 }
+.nww.nww--playing.nww--pill-enter .nww-pill {
+  animation:
+    nww-pill-in 0.22s cubic-bezier(0.23, 1, 0.32, 1) both,
+    card-border-rotate 6s linear infinite;
+}
+@media (hover: hover) and (pointer: fine) {
+  .nww--playing .nww-pill:hover {
+    transform: translateY(-1px) scale(1.02);
+  }
+}
+.nww--playing .nww-pill:active {
+  transform: scale(0.98);
+}
 /* Panel-in timing defined here; state visibility rules must NOT re-declare animation */
 .nww--expanded .nww-panel,
 .nww--deciding .nww-panel {
   animation: nww-panel-in 0.25s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.nww.nww--suppress-enter .nww-panel,
+.nww.nww--suppress-enter .nww-playing > * {
+  animation: none !important;
 }
 .nww-pill-poster {
   width: 32px;
@@ -3288,13 +3320,9 @@ main {
   position: absolute;
   inset: -20px;
   background: radial-gradient(ellipse at center, rgba(255,215,0,0.5) 0%, rgba(255,165,0,0.3) 40%, transparent 70%);
-  filter: blur(20px);
+  filter: blur(8px);
   z-index: 0;
-  animation: nww-glow-breathe 4s ease-in-out infinite;
-}
-@keyframes nww-glow-breathe {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
+  opacity: 0.72;
 }
 .nww-title {
   font-family: 'Playfair Display', Georgia, serif;
@@ -3353,7 +3381,7 @@ main {
   font-variant-numeric: tabular-nums;
 }
 .nww-controls {
-  display: flex;
+  display: none;
   gap: 8px;
   width: 100%;
 }
@@ -3381,7 +3409,7 @@ main {
 
 /* Decisions */
 .nww-decisions {
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 6px;
   width: 100%;
@@ -3425,6 +3453,7 @@ main {
   background: rgba(204,85,85,0.06);
 }
 .nww-confirmation {
+  display: none;
   font-size: 13px;
   color: rgba(255,215,0,0.8);
   text-align: center;
@@ -3463,6 +3492,10 @@ main {
 .nww--deciding .nww-panel { display: flex; }
 .nww--deciding .nww-search { display: none; }
 .nww--deciding .nww-playing { display: flex; }
+
+.nww[data-playing-view="controls"] .nww-controls { display: flex; }
+.nww[data-playing-view="decisions"] .nww-decisions { display: flex; }
+.nww[data-playing-view="confirmation"] .nww-confirmation { display: block; }
 
 /* Pulse animation for completion */
 @keyframes nww-pulse {
@@ -3513,6 +3546,9 @@ main {
   .nww--playing .nww-pill { animation: none !important; }
   .nww--complete .nww-pill { animation: none !important; }
   .nww--playing .nww-pill-poster { animation: none !important; }
+  .nww-pill { transition: none !important; }
+  .nww--playing .nww-pill:hover,
+  .nww--playing .nww-pill:active { transform: none !important; }
   .nww-btn:active, .nww-dec-btn:active { transform: none !important; }
   .nww-idle-btn:active { transform: none !important; }
 }
@@ -3546,7 +3582,7 @@ main {
   font-weight: 500;
   letter-spacing: 0.02em;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, border-color 0.2s, background-color 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 .nww-companion-open-btn:hover {
   border-color: rgba(255,215,0,0.35);
@@ -3622,28 +3658,26 @@ main {
   background: #1a1a1a;
   max-height: 620px;
   height: 620px;
-  transform-origin: left center;
-  animation: nww-companion-in 0.38s cubic-bezier(0.23, 1, 0.32, 1) both;
+  transform-origin: bottom center;
+  animation: nww-companion-rise-in 0.34s cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 
-@keyframes nww-companion-in {
-  from { opacity: 0; transform: translateX(-32px) scale(0.94); }
-  to   { opacity: 1; transform: translateX(0) scale(1); }
+@keyframes nww-companion-rise-in {
+  from { opacity: 0; transform: translateY(42px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-@keyframes nww-companion-out {
-  from { opacity: 1; transform: translateX(0) scale(1); }
-  to   { opacity: 0; transform: translateX(-26px) scale(0.94); }
+@keyframes nww-companion-drop-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(42px) scale(0.96); }
 }
 
-/* Playing panel physics: nudges left when companion arrives, bounces right when it leaves */
-@keyframes nww-panel-companion-push {
+/* Playing panel physics: slides toward center when companion takes its original slot */
+@keyframes nww-panel-companion-shift-left {
   0%   { transform: translateX(0); }
-  40%  { transform: translateX(-14px); }
-  100% { transform: translateX(0); }
+  100% { transform: translateX(-26px); }
 }
-@keyframes nww-panel-companion-release {
-  0%   { transform: translateX(0); }
-  45%  { transform: translateX(12px); }
+@keyframes nww-panel-companion-shift-right {
+  0%   { transform: translateX(-26px); }
   100% { transform: translateX(0); }
 }
 
@@ -3743,7 +3777,7 @@ main {
   font-size: 10px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: color 0.15s, background-color 0.15s;
 }
 .nww-model-btn.active {
   background: rgba(255,215,0,0.1);
@@ -3764,7 +3798,7 @@ main {
   color: rgba(255,255,255,0.3);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: color 0.15s, border-color 0.15s, transform 0.15s;
   flex-shrink: 0;
 }
 .nww-companion-close:hover { color: rgba(255,255,255,0.7); border-color: rgba(255,255,255,0.2); }
@@ -3875,7 +3909,7 @@ main {
   padding: 5px 10px;
   cursor: pointer;
   margin-top: 4px;
-  transition: all 0.15s;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
 }
 .nww-facts-retry:hover { border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.8); }
 
@@ -4036,7 +4070,7 @@ main {
   color: rgba(255,215,0,0.9);
   font-size: 14px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
   flex-shrink: 0;
 }
 .nww-chat-send:hover { background: rgba(255,215,0,0.2); border-color: rgba(255,215,0,0.4); }
@@ -4056,12 +4090,24 @@ main {
 
 /* ── Reduced motion additions ────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
+  .movie-card {
+    transition: none !important;
+  }
+  .movie-card--interactive:hover,
+  .movie-card--interactive:focus-within {
+    transform: none !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.1) !important;
+  }
+  .card-sheen {
+    transition: none !important;
+  }
   .nww--companion-open .nww-companion { animation: none !important; }
   .nww-fact-card { animation: none !important; }
   .nww-fact-card.nww-fact-new { animation: none !important; }
   .nww-facts-skeleton { animation: none !important; background: rgba(255,255,255,0.05); }
   .nww-msg { animation: none !important; }
   .nww-typing-dot { animation: none !important; }
+  .nww-poster-glow { filter: none !important; }
   .nww-pill.nww-pill-fact-pulse { animation: none !important; }
   .nww-msg-assistant-new .nww-msg-bubble { animation: none !important; }
   .nww-companion-toggle-wrap input:checked ~ .nww-pill-switch { animation: none !important; }

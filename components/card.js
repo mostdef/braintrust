@@ -7,34 +7,63 @@ const CardComponent = (() => {
 
   // ── Tilt + sheen effect ────────────────────────────────────────────────────
   function addTilt(card) {
-    const sheen = document.createElement('div');
-    sheen.className = 'card-sheen';
-    card.appendChild(sheen);
+    card.classList.add('movie-card--interactive');
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let sheen = card.querySelector('.card-sheen');
+    if (!sheen) {
+      sheen = document.createElement('div');
+      sheen.className = 'card-sheen';
+      card.appendChild(sheen);
+    }
 
     let tiltFrame = null;
-    card.addEventListener('mousemove', (e) => {
-      if (tiltFrame) return;
-      const cx = e.clientX, cy = e.clientY;
-      tiltFrame = requestAnimationFrame(() => {
-        const rect = card.getBoundingClientRect();
-        const x = (cx - rect.left) / rect.width - 0.5;
-        const y = (cy - rect.top) / rect.height - 0.5;
+    let lastClientX = 0;
+    let lastClientY = 0;
 
-        card.style.transition = 'transform 0.05s linear, box-shadow 0.05s linear';
-        card.style.transform = `perspective(800px) rotateY(${x * 7}deg) rotateX(${-y * 7}deg) scale(1.02)`;
-        card.style.boxShadow = `${-x * 10}px ${y * 10}px 24px rgba(0,0,0,0.2)`;
-
-        sheen.style.opacity = '1';
-        sheen.style.background = `radial-gradient(circle at ${(0.5 - x) * 100}% ${(0.5 - y) * 100}%, rgba(255,255,255,0.12) 0%, transparent 65%)`;
-        tiltFrame = null;
-      });
-    });
-
-    card.addEventListener('mouseleave', () => {
+    const resetTilt = () => {
       card.style.transition = 'transform 0.6s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.6s cubic-bezier(0.23, 1, 0.32, 1)';
       card.style.transform = '';
       card.style.boxShadow = '';
       sheen.style.opacity = '0';
+    };
+
+    const updateTilt = () => {
+      tiltFrame = null;
+      if (prefersReducedMotion.matches) return;
+
+      const rect = card.getBoundingClientRect();
+      const x = (lastClientX - rect.left) / rect.width - 0.5;
+      const y = (lastClientY - rect.top) / rect.height - 0.5;
+
+      card.style.transition = 'transform 0.05s linear, box-shadow 0.05s linear';
+      card.style.transform = `perspective(800px) rotateY(${x * 7}deg) rotateX(${-y * 7}deg) scale(1.02)`;
+      card.style.boxShadow = `${-x * 10}px ${y * 10}px 24px rgba(0,0,0,0.2)`;
+
+      sheen.style.opacity = '1';
+      sheen.style.background = `radial-gradient(circle at ${(0.5 - x) * 100}% ${(0.5 - y) * 100}%, rgba(255,255,255,0.12) 0%, transparent 65%)`;
+    };
+
+    card.addEventListener('mouseenter', (e) => {
+      if (prefersReducedMotion.matches) return;
+      lastClientX = e.clientX;
+      lastClientY = e.clientY;
+      updateTilt();
+    });
+
+    card.addEventListener('mousemove', (e) => {
+      lastClientX = e.clientX;
+      lastClientY = e.clientY;
+      if (tiltFrame || prefersReducedMotion.matches) return;
+      tiltFrame = requestAnimationFrame(updateTilt);
+    });
+
+    card.addEventListener('mouseleave', () => {
+      if (tiltFrame) {
+        cancelAnimationFrame(tiltFrame);
+        tiltFrame = null;
+      }
+      resetTilt();
     });
   }
 
