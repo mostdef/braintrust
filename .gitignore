@@ -1,7 +1,13 @@
 node_modules/
+.env
 .env.local
+.env*.local
 .vercel/
 .vercel
 snapshots/
 .DS_Store
 persona-images/
+.claude/
+.codex/
+images/generated-*
+*.pen
