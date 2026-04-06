@@ -1,7 +1,7 @@
 const getAuthenticatedUser = require('./_auth');
 const supabaseAdmin        = require('./_supabase');
 
-const FIELDS = ['movies', 'watchlist', 'maybe', 'meh', 'banned', 'standards', 'total_cost'];
+const FIELDS = ['movies', 'watchlist', 'maybe', 'meh', 'banned', 'standards', 'watch_log', 'total_cost'];
 
 const DEFAULTS = {
   movies:     [],
@@ -10,6 +10,7 @@ const DEFAULTS = {
   meh:        [],
   banned:     [],
   standards:  [],
+  watch_log:  [],
   total_cost: 0,
 };
 
@@ -25,7 +26,7 @@ module.exports = async function handler(req, res) {
 
     const { data, error } = await supabaseAdmin
       .from('user_data')
-      .select('movies, watchlist, maybe, meh, banned, standards, total_cost')
+      .select('movies, watchlist, maybe, meh, banned, standards, watch_log, total_cost')
       .eq('user_id', user.id)
       .maybeSingle();
 

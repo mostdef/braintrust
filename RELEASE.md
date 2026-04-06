@@ -32,6 +32,18 @@
 - Fixed an issue where manually saving a snapshot could create two identical entries
 - Filesystem-based time-window lock prevents duplicate writes even when the request is processed more than once
 
+### Watching Diary
+- New slide-in diary panel accessible from the nav, with separate Watch Log and Session Journal tabs
+- Watch Log lets you manually record any viewing — film or TV series (with season and episode selectors) — with status (Finished, Abandoned, Timestamp), stop point, date, and a short note
+- Session Journal shows companion-enriched signals from Watch Now sessions; a Re-enrich button re-runs AI signal extraction for sessions recorded while AI was off
+- Watch log is now synced to the cloud alongside your collection
+
+### AI Toggle
+- New pill switch in the main nav to turn all AI features on or off — off by default for all users
+- When off: recommendations are paused, companion chat is disabled, and persona generation is skipped
+- Sessions completed while AI is off are buffered; signals are extracted automatically when AI is re-enabled
+- The recommendations sub-toggle is dimmed (but preserved) while the master toggle is off
+
 ---
 
 ## Latest — 2026-04-05

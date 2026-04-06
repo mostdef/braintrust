@@ -9,12 +9,14 @@ A personal film curation tool for reflective movie watching. Not a streaming app
 - **Curate** your collection across five categories: Collection, To Watch, Wildcard, Meh, Don't Recommend — each reachable by direct link with sort preserved in the URL
 - **Anticipated** — track unreleased films with a countdown to their theatrical premiere; notifies you when something you were waiting for has arrived; Coming Soon strip always shows five upcoming films, auto-refilling as you act on suggestions
 - **Reference films** — pin up to 12 standards that anchor your taste and inform recommendations
-- **AI recommendations** powered by Claude, tuned to your taste profile
+- **AI features** — recommendations, companion chat, and persona — controlled by a master AI toggle in the nav; off by default; sessions buffered while off and analysed on re-enable
 - **Now Watching widget** — track a live session with a real-time timer, pause/resume, and a film companion (timed facts + chat)
 - **Companion** — spoiler-aware film notes and freeform chat during a watch session
+- **Watching Diary** — a private timeline of every viewing: what you watched, when you stopped, and how it ended; covers both films and TV with season/episode tracking; synced to the cloud
+- **Session Journal** — companion-enriched session signals with a re-enrich option for sessions recorded while AI was off
 - **Persona** — AI-generated taste portrait that evolves with your collection
 - **Where to watch** — per-film tab showing streaming availability by country, with direct deep links to each platform
-- **Snapshots** — point-in-time backups of your full collection state
+- **Snapshots** — point-in-time backups of your full collection state, including watch log
 
 ---
 

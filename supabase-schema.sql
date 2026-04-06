@@ -7,6 +7,7 @@ create table user_data (
   meh         jsonb not null default '[]',
   banned      jsonb not null default '[]',
   standards   jsonb not null default '[]',
+  watch_log   jsonb not null default '[]',
   total_cost  numeric(12,6) not null default 0,
   updated_at  timestamptz not null default now()
 );

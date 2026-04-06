@@ -75,6 +75,33 @@ module.exports = async function handler(req, res) {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.status(400).end();
 
+  if (req.query.scope === 'all') {
+    const searchRes = await fetch(
+      `${TMDB_BASE}/search/multi?query=${encodeURIComponent(q)}&language=en-US&page=1&include_adult=false`,
+      { headers }
+    );
+    const search = await searchRes.json();
+    const hits = (search.results || [])
+      .filter((item) => item.media_type === 'movie' || item.media_type === 'tv')
+      .slice(0, 10);
+
+    return res.json(hits.map((item) => ({
+      title: item.media_type === 'tv' ? item.name : item.title,
+      year: item.media_type === 'tv'
+        ? (item.first_air_date ? parseInt(item.first_air_date) : null)
+        : (item.release_date ? parseInt(item.release_date) : null),
+      release_date: item.media_type === 'tv'
+        ? (item.first_air_date || null)
+        : (item.release_date || null),
+      poster: item.poster_path ? `${TMDB_IMG}w200${item.poster_path}` : null,
+      tmdb_id: item.id,
+      tmdb_rating: item.vote_count > 10 ? parseFloat(item.vote_average.toFixed(1)) : null,
+      imdb_rating: null,
+      rt_score: null,
+      media_type: item.media_type,
+    })));
+  }
+
   const searchRes = await fetch(
     `${TMDB_BASE}/search/movie?query=${encodeURIComponent(q)}&language=en-US&page=1`,
     { headers }

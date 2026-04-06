@@ -12,6 +12,7 @@
     'thecollection_meh',
     'thecollection_banned',
     'thecollection_standards',
+    'thecollection_watch_log',
     'thecollection_total_cost',
   ];
 
@@ -107,7 +108,8 @@
         // Check if server has any real data
         const serverHasData = (serverData.movies && serverData.movies.length > 0) ||
           (serverData.watchlist && serverData.watchlist.length > 0) ||
-          (serverData.standards && serverData.standards.length > 0);
+          (serverData.standards && serverData.standards.length > 0) ||
+          (serverData.watch_log && serverData.watch_log.length > 0);
 
         if (serverHasData) {
           // Server already has data — mark migrated and move on
@@ -120,7 +122,11 @@
         let localMovies = [];
         try { localMovies = moviesRaw ? JSON.parse(moviesRaw) : []; } catch (e) {}
 
-        if (!localMovies.length) {
+        const watchLogRaw = localStorage.getItem('thecollection_watch_log');
+        let localWatchLog = [];
+        try { localWatchLog = watchLogRaw ? JSON.parse(watchLogRaw) : []; } catch (e) {}
+
+        if (!localMovies.length && !localWatchLog.length) {
           // Nothing local either — mark migrated
           localStorage.setItem('thecollection_migrated', '1');
           return;

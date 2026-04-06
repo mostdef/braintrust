@@ -408,6 +408,7 @@ function savePersonaCache(key, data) {
 
 function fetchPersonaImage(personas, idx) {
   if (personaBlobUrls[idx]) return; // already loaded or loading
+  if (!isAiEnabled()) return;
   personaBlobUrls[idx] = 'loading';
   fetch('/api/persona-image', {
     method: 'POST',
@@ -544,7 +545,7 @@ function renderPersonaCard(wrap, personas) {
 
   if (statsCache && statsCache.key === statsKey) {
     renderStatsBar(statsBar, statsCache.data);
-  } else {
+  } else if (isAiEnabled()) {
     const films = movies.map(m => ({ title: m.title, year: m.year, director: m.director }));
     fetch('/api/persona-stats', {
       method: 'POST',
@@ -644,6 +645,7 @@ function renderPersonaSection(force = false) {
       </div>
     </div>`;
 
+  if (!isAiEnabled()) { wrap.innerHTML = ''; return; }
   fetch('/api/persona', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -708,9 +710,15 @@ const REC_CACHE_KEY      = 'thecollection_rec_cache_v2';
 const REC_MODEL_KEY      = 'thecollection_rec_model';
 const REC_ENABLED_KEY    = 'thecollection_rec_enabled';
 const STARTING_BAL_KEY   = 'thecollection_starting_balance';
+const AI_ENABLED_KEY     = 'thecollection_ai_enabled';
+const AI_BUFFER_KEY      = 'thecollection_ai_buffer';
 
 function isRecEnabled() { return localStorage.getItem(REC_ENABLED_KEY) === '1'; }
 function setRecEnabled(v) { localStorage.setItem(REC_ENABLED_KEY, v ? '1' : '0'); }
+function isAiEnabled() { return localStorage.getItem(AI_ENABLED_KEY) === '1'; }
+function setAiEnabled(v) { localStorage.setItem(AI_ENABLED_KEY, v ? '1' : '0'); }
+function loadAiBuffer() { try { return JSON.parse(localStorage.getItem(AI_BUFFER_KEY) || '[]'); } catch { return []; } }
+function saveAiBuffer(buf) { localStorage.setItem(AI_BUFFER_KEY, JSON.stringify(buf)); }
 
 function getRecModel() {
   return localStorage.getItem(REC_MODEL_KEY) || 'sonnet';
@@ -793,8 +801,8 @@ function saveRecCache(rec) {
 }
 
 async function fetchRecommendation() {
-  // When disabled, just show cached item (no API call)
-  if (!isRecEnabled()) {
+  // When AI master toggle or rec sub-toggle is off, show cached/disabled state
+  if (!isAiEnabled() || !isRecEnabled()) {
     const cached = loadRecCache();
     if (cached?.title) {
       // Only exclude titles actually in user's lists, not shown-recs history
@@ -865,6 +873,7 @@ function initRecHeading() {
   const wrap = document.getElementById('recommendation');
 
   const headingRow = document.createElement('div');
+  headingRow.id = 'rec-heading-row';
   headingRow.className = 'rec-heading-row';
 
   const heading = document.createElement('div');
@@ -1236,7 +1245,7 @@ function renderRecommendation() {
 
   const banner = document.createElement('div');
   banner.className = 'rec-banner';
-  if (!isRecEnabled()) banner.classList.add('rec-banner-disabled');
+  if (!isAiEnabled() || !isRecEnabled()) banner.classList.add('rec-banner-disabled');
   banner.appendChild(bg);
   banner.appendChild(overlay);
   banner.appendChild(content);
@@ -1255,9 +1264,47 @@ const SNAPSHOTS_KEY  = 'thecollection_snapshots';
 const STANDARDS_KEY  = 'thecollection_standards';
 const TOTAL_COST_KEY      = 'thecollection_total_cost';
 const TASTE_SIGNALS_KEY     = 'thecollection_taste_signals';
+const WATCH_LOG_KEY         = 'thecollection_watch_log';
 const ANTICIPATED_KEY       = 'thecollection_anticipated';
 const WTW_COUNTRY_KEY       = 'thecollection_wtw_country';
 totalCost = parseFloat(localStorage.getItem(TOTAL_COST_KEY) || '0') || 0;
+
+const diary = {
+  layout:            document.getElementById('movies-layout'),
+  panel:             document.getElementById('watch-diary-panel'),
+  toggleBtn:         document.getElementById('watch-diary-toggle'),
+  closeBtn:          document.getElementById('watch-diary-close'),
+  tabs:              document.getElementById('watch-diary-tabs'),
+  toolbar:           document.getElementById('watch-diary-toolbar'),
+  tabLog:            document.getElementById('watch-diary-tab-log'),
+  tabJournal:        document.getElementById('watch-diary-tab-journal'),
+  reenrichBtn:       document.getElementById('watch-journal-reenrich-btn'),
+  logPanel:          document.getElementById('watch-diary-log-panel'),
+  journalPanel:      document.getElementById('watch-diary-journal-panel'),
+  form:              document.getElementById('nww-diary-form'),
+  formGrid:          document.querySelector('#nww-diary-form .nww-diary-form-grid'),
+  titleInput:        document.getElementById('nww-diary-title-input'),
+  searchResults:     document.getElementById('nww-diary-search-results'),
+  seasonField:       document.getElementById('nww-diary-season-field'),
+  seasonInput:       document.getElementById('nww-diary-season-input'),
+  episodeField:      document.getElementById('nww-diary-episode-field'),
+  episodeInput:      document.getElementById('nww-diary-episode-input'),
+  statusInput:       document.getElementById('nww-diary-status-input'),
+  watchedAtInput:    document.getElementById('nww-diary-watched-at-input'),
+  timestampInput:    document.getElementById('nww-diary-timestamp-input'),
+  noteInput:         document.getElementById('nww-diary-note-input'),
+  rewatchInput:      document.getElementById('nww-diary-rewatch-input'),
+  submit:            document.getElementById('nww-diary-submit'),
+  entries:           document.getElementById('nww-diary-entries'),
+  entryTemplate:     document.getElementById('nww-diary-entry-template'),
+  journalList:       document.getElementById('watch-journal-list'),
+  isOpen: false,
+  activeTab: 'log',
+  selectedResult: null,
+  searchDebounce: null,
+  tvRequestToken: 0,
+  reenrichInFlight: false,
+};
 
 // ── Supabase sync ─────────────────────────────────────────────────────────────
 // Hydrate localStorage from Supabase on load, then push changes back debounced.
@@ -1274,6 +1321,7 @@ async function supabasePush() {
     meh:        JSON.parse(localStorage.getItem(MEH_KEY)       || '[]'),
     banned:     JSON.parse(localStorage.getItem(BANNED_KEY)    || '[]'),
     standards:  JSON.parse(localStorage.getItem(STANDARDS_KEY) || '[]'),
+    watch_log:  JSON.parse(localStorage.getItem(WATCH_LOG_KEY)  || '[]'),
     total_cost: parseFloat(localStorage.getItem(TOTAL_COST_KEY) || '0') || 0,
   };
   fetch('/api/user-data', {
@@ -1306,6 +1354,7 @@ async function supabaseHydrate() {
     set(MEH_KEY,        data.meh);
     set(BANNED_KEY,     data.banned);
     set(STANDARDS_KEY,  data.standards);
+    set(WATCH_LOG_KEY,  data.watch_log);
     if (data.total_cost !== undefined) { localStorage.setItem(TOTAL_COST_KEY, String(data.total_cost)); changed = true; }
     return changed;
   } catch(e) { return false; }
@@ -1326,6 +1375,7 @@ function saveSnapshot(label = '') {
     meh:       JSON.parse(localStorage.getItem(MEH_KEY)       || '[]'),
     banned:    JSON.parse(localStorage.getItem(BANNED_KEY)    || '[]'),
     standards: JSON.parse(localStorage.getItem(STANDARDS_KEY) || '[]'),
+    watch_log: JSON.parse(localStorage.getItem(WATCH_LOG_KEY) || '[]'),
     totalCost: totalCost,
   };
   const snapshots = loadSnapshots();
@@ -1350,6 +1400,7 @@ function restoreSnapshot(snap) {
   localStorage.setItem(MEH_KEY,       JSON.stringify(snap.meh || []));
   localStorage.setItem(BANNED_KEY,    JSON.stringify(snap.banned));
   if (snap.standards) localStorage.setItem(STANDARDS_KEY, JSON.stringify(snap.standards));
+  localStorage.setItem(WATCH_LOG_KEY, JSON.stringify(snap.watch_log || snap.watchLog || []));
   if (snap.totalCost != null) {
     totalCost = snap.totalCost;
     localStorage.setItem(TOTAL_COST_KEY, totalCost.toFixed(6));
@@ -1360,6 +1411,605 @@ function restoreSnapshot(snap) {
   renderGridNav();
   renderStandardsSection();
   renderPersonaSection();
+  renderWatchDiary();
+}
+
+function createWatchLogId() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  return 'watchlog_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+function loadWatchLog() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(WATCH_LOG_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveWatchLog(entries) {
+  localStorage.setItem(WATCH_LOG_KEY, JSON.stringify(entries));
+  schedulePush();
+  renderWatchDiary();
+}
+
+function sortWatchLog(entries) {
+  return entries.slice().sort((a, b) => {
+    const aTs = Date.parse(a.updatedAt || a.watchedAt || a.startedAt || 0) || 0;
+    const bTs = Date.parse(b.updatedAt || b.watchedAt || b.startedAt || 0) || 0;
+    return bTs - aTs;
+  });
+}
+
+function upsertWatchLogEntry(entry) {
+  const entries = loadWatchLog();
+  const index = entries.findIndex((item) => item.id === entry.id);
+  const next = {
+    ...entry,
+    updatedAt: new Date().toISOString(),
+  };
+  if (index >= 0) entries[index] = next;
+  else entries.unshift(next);
+  saveWatchLog(sortWatchLog(entries));
+  return next;
+}
+
+function deleteWatchLogEntry(id) {
+  const next = loadWatchLog().filter((entry) => entry.id !== id);
+  saveWatchLog(next);
+}
+
+function getActiveDiaryEntry(data) {
+  if (!data || !data.diaryEntryId) return null;
+  return loadWatchLog().find((entry) => entry.id === data.diaryEntryId) || null;
+}
+
+function ensureDiaryDraftFromSession(data) {
+  if (!data) return null;
+  const existing = getActiveDiaryEntry(data);
+  if (existing) return existing;
+
+  const entry = upsertWatchLogEntry({
+    id: createWatchLogId(),
+    title: data.title,
+    year: data.year,
+    director: data.director,
+    poster: data.poster,
+    startedAt: new Date().toISOString(),
+    watchedAt: new Date().toISOString(),
+    status: 'timestamp',
+    timestampMs: 0,
+    note: '',
+    source: 'nww',
+    rewatch: false,
+  });
+  data.diaryEntryId = entry.id;
+  saveNowWatching(data);
+  return entry;
+}
+
+function updateDiaryEntryFromSession(data, patch) {
+  if (!data) return null;
+  const base = ensureDiaryDraftFromSession(data);
+  if (!base) return null;
+  return upsertWatchLogEntry({
+    ...base,
+    title: data.title,
+    year: data.year,
+    director: data.director,
+    poster: data.poster,
+    watchedAt: patch.watchedAt || new Date().toISOString(),
+    ...patch,
+  });
+}
+
+function formatDiaryDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function loadTasteSignals() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(TASTE_SIGNALS_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTasteSignals(signals) {
+  localStorage.setItem(TASTE_SIGNALS_KEY, JSON.stringify(signals));
+  renderSessionJournal();
+  updateWatchDiaryToolbar();
+  schedulePush();
+}
+
+function deleteTasteSignal(timestamp) {
+  const next = loadTasteSignals().filter((signal) => signal.timestamp !== timestamp);
+  saveTasteSignals(next);
+}
+
+function hasExtractedTasteSignals(llmSignals) {
+  if (!llmSignals || typeof llmSignals !== 'object') return false;
+  return Object.values(llmSignals).some((value) => Array.isArray(value) && value.length);
+}
+
+function canReenrichTasteSignal(signal) {
+  return Array.isArray(signal?.chat_history)
+    && signal.chat_history.length >= 2
+    && !hasExtractedTasteSignals(signal.llm_signals);
+}
+
+function getReenrichableTasteSignals(signals = loadTasteSignals()) {
+  return signals.filter(canReenrichTasteSignal);
+}
+
+async function requestTasteSignalExtraction(signal) {
+  const res = await fetch('/api/companion-chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'extract',
+      title: signal.title,
+      year: signal.year,
+      director: signal.director,
+      decision: signal.decision,
+      chat_history: signal.chat_history || [],
+      facts: signal.facts || [],
+    }),
+  });
+  const json = res.ok ? await res.json() : null;
+  return json?.signals || null;
+}
+
+function updateWatchDiaryToolbar() {
+  const toolbar = diary.toolbar;
+  const button = diary.reenrichBtn;
+  if (!toolbar || !button) return;
+
+  const count = diary.activeTab === 'journal' ? getReenrichableTasteSignals().length : 0;
+  const show = diary.activeTab === 'journal' && count > 0;
+
+  toolbar.hidden = !show;
+  button.hidden = !show;
+  button.disabled = diary.reenrichInFlight;
+  button.textContent = diary.reenrichInFlight
+    ? 'Re-enriching signals…'
+    : `Re-enrich signals (${count})`;
+}
+
+async function reenrichMissingTasteSignals() {
+  if (diary.reenrichInFlight) return;
+
+  const signals = loadTasteSignals();
+  const eligible = getReenrichableTasteSignals(signals);
+  if (!eligible.length) {
+    updateWatchDiaryToolbar();
+    return;
+  }
+
+  diary.reenrichInFlight = true;
+  updateWatchDiaryToolbar();
+
+  let changed = false;
+  for (const signal of eligible) {
+    try {
+      const extracted = await requestTasteSignalExtraction(signal);
+      if (!extracted) continue;
+      const entry = signals.find((item) => item.timestamp === signal.timestamp);
+      if (!entry) continue;
+      entry.llm_signals = extracted;
+      changed = true;
+    } catch {}
+  }
+
+  diary.reenrichInFlight = false;
+  if (changed) {
+    saveTasteSignals(signals);
+  } else {
+    updateWatchDiaryToolbar();
+  }
+}
+
+function formatDiaryDateInput(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function getDiaryDayKey(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function formatDiaryGroupDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
+function formatSignalDecision(decision) {
+  return ({
+    collection: 'Added to Collection',
+    meh: 'Marked Meh',
+    banned: "Don't Recommend",
+  })[decision] || decision || 'Unknown';
+}
+
+function formatWatchDuration(signal) {
+  const watched = signal.watch_duration_min;
+  const runtime = signal.runtime_min;
+  if (watched && runtime) return `Watched ${watched} of ${runtime} min`;
+  if (watched) return `Watched ${watched} min`;
+  return 'Duration unavailable';
+}
+
+function renderSignalTags(items) {
+  if (!Array.isArray(items) || !items.length) return '';
+  return `<div class="watch-journal-tags">${items.map((item) => `<span class="watch-journal-tag">${item}</span>`).join('')}</div>`;
+}
+
+function formatDiaryTimestamp(ms) {
+  return nwwFormatTime(ms || 0);
+}
+
+function parseDiaryTimestampInput(value) {
+  return value ? nwwParseTime(value.trim()) : null;
+}
+
+function formatDiaryEpisodeCode(seasonNumber, episodeNumber) {
+  if (!seasonNumber || !episodeNumber) return '';
+  return `S${String(seasonNumber).padStart(2, '0')}E${String(episodeNumber).padStart(2, '0')}`;
+}
+
+function resetDiarySeriesFields() {
+  if (diary.formGrid) diary.formGrid.classList.remove('is-tv');
+  if (diary.seasonInput) {
+    diary.seasonInput.innerHTML = '<option value="">Choose season</option>';
+    diary.seasonInput.disabled = true;
+  }
+  if (diary.episodeInput) {
+    diary.episodeInput.innerHTML = '<option value="">Choose episode</option>';
+    diary.episodeInput.disabled = true;
+  }
+}
+
+function setDiarySeriesFieldsVisibility(isTv) {
+  if (diary.formGrid) diary.formGrid.classList.toggle('is-tv', !!isTv);
+  if (!isTv) {
+    resetDiarySeriesFields();
+    return;
+  }
+  if (diary.seasonInput) diary.seasonInput.disabled = false;
+}
+
+async function loadDiaryTvEpisodes(tmdbId, seasonNumber, selectedEpisodeNumber = null) {
+  if (!diary.episodeInput || !tmdbId || !seasonNumber) return;
+  const token = ++diary.tvRequestToken;
+  diary.episodeInput.disabled = true;
+  diary.episodeInput.innerHTML = '<option value="">Loading episodes…</option>';
+  try {
+    const res = await fetch(`/api/tv-details?tmdb_id=${encodeURIComponent(tmdbId)}&season_number=${encodeURIComponent(seasonNumber)}`);
+    if (!res.ok) throw new Error('episode_lookup_failed');
+    const data = await res.json();
+    if (token !== diary.tvRequestToken) return;
+    const episodes = Array.isArray(data.episodes) ? data.episodes : [];
+    diary.episodeInput.innerHTML = '<option value="">Choose episode</option>';
+    episodes.forEach((episode) => {
+      const option = document.createElement('option');
+      option.value = String(episode.episode_number);
+      option.textContent = `${formatDiaryEpisodeCode(seasonNumber, episode.episode_number)} · ${episode.name || 'Untitled episode'}`;
+      option.dataset.episodeTitle = episode.name || '';
+      diary.episodeInput.appendChild(option);
+    });
+    diary.episodeInput.disabled = false;
+    if (selectedEpisodeNumber) diary.episodeInput.value = String(selectedEpisodeNumber);
+  } catch {
+    if (token !== diary.tvRequestToken) return;
+    diary.episodeInput.innerHTML = '<option value="">Could not load episodes</option>';
+  }
+}
+
+async function loadDiaryTvSeasons(result, selectedSeasonNumber = null, selectedEpisodeNumber = null) {
+  if (!diary.seasonInput || !result?.tmdb_id) return;
+  const token = ++diary.tvRequestToken;
+  setDiarySeriesFieldsVisibility(true);
+  diary.seasonInput.disabled = true;
+  diary.seasonInput.innerHTML = '<option value="">Loading seasons…</option>';
+  if (diary.episodeInput) {
+    diary.episodeInput.innerHTML = '<option value="">Choose episode</option>';
+    diary.episodeInput.disabled = true;
+  }
+  try {
+    const res = await fetch(`/api/tv-details?tmdb_id=${encodeURIComponent(result.tmdb_id)}`);
+    if (!res.ok) throw new Error('season_lookup_failed');
+    const data = await res.json();
+    if (token !== diary.tvRequestToken) return;
+    const seasons = Array.isArray(data.seasons) ? data.seasons.filter((season) => season.season_number > 0) : [];
+    diary.seasonInput.innerHTML = '<option value="">Choose season</option>';
+    seasons.forEach((season) => {
+      const option = document.createElement('option');
+      option.value = String(season.season_number);
+      option.textContent = season.name || `Season ${season.season_number}`;
+      diary.seasonInput.appendChild(option);
+    });
+    diary.seasonInput.disabled = false;
+    if (selectedSeasonNumber) {
+      diary.seasonInput.value = String(selectedSeasonNumber);
+      await loadDiaryTvEpisodes(result.tmdb_id, selectedSeasonNumber, selectedEpisodeNumber);
+    }
+  } catch {
+    if (token !== diary.tvRequestToken) return;
+    diary.seasonInput.innerHTML = '<option value="">Could not load seasons</option>';
+  }
+}
+
+function setDiaryTimestampFieldVisibility() {
+  if (!diary.statusInput || !diary.timestampInput) return;
+  const showTimestamp = diary.statusInput.value !== 'finished';
+  diary.timestampInput.disabled = !showTimestamp;
+  const field = diary.timestampInput.closest('.nww-diary-field');
+  field?.classList.toggle('is-disabled', !showTimestamp);
+  field?.classList.toggle('is-hidden', !showTimestamp);
+  if (!showTimestamp) diary.timestampInput.value = '';
+}
+
+function resetWatchDiaryForm() {
+  if (!diary.form) return;
+  diary.form.reset();
+  if (diary.watchedAtInput) diary.watchedAtInput.value = formatDiaryDateInput(new Date().toISOString());
+  if (diary.statusInput) diary.statusInput.value = 'finished';
+  if (diary.submit) diary.submit.textContent = 'Add entry';
+  diary.selectedResult = null;
+  resetDiarySeriesFields();
+  closeDiarySearchResults();
+  setDiaryTimestampFieldVisibility();
+}
+
+function populateWatchDiaryFormFromSession(data) {
+  if (!diary.form || !data) return;
+  diary.titleInput.value = data.title || '';
+  diary.watchedAtInput.value = formatDiaryDateInput(new Date().toISOString());
+  diary.statusInput.value = 'timestamp';
+  diary.timestampInput.value = formatDiaryTimestamp(nwwGetElapsed(data));
+  diary.noteInput.value = '';
+  diary.rewatchInput.checked = false;
+  if (diary.submit) diary.submit.textContent = 'Save current entry';
+  diary.selectedResult = {
+    title: data.title,
+    year: data.year || null,
+    poster: data.poster || null,
+    media_type: 'movie',
+  };
+  resetDiarySeriesFields();
+  closeDiarySearchResults();
+  setDiaryTimestampFieldVisibility();
+}
+
+function renderWatchDiary() {
+  const list = diary.entries;
+  if (!list) return;
+
+  const entries = sortWatchLog(loadWatchLog());
+  if (!entries.length) {
+    list.innerHTML = `
+      <div class="nww-diary-empty">
+        <div class="nww-diary-empty-title">No diary entries yet.</div>
+        <div class="nww-diary-empty-copy">Use the form above or start a session with Watch Now to add your first entry.</div>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = '';
+  const template = diary.entryTemplate;
+  let lastDayKey = '';
+  entries.forEach((entry) => {
+    const dayValue = entry.watchedAt || entry.startedAt;
+    const dayKey = getDiaryDayKey(dayValue);
+    if (dayKey && dayKey !== lastDayKey) {
+      const divider = document.createElement('div');
+      divider.className = 'nww-diary-day-divider';
+      divider.innerHTML = `<span>${formatDiaryGroupDate(dayValue)}</span>`;
+      list.appendChild(divider);
+      lastDayKey = dayKey;
+    }
+    const item = template
+      ? template.content.firstElementChild.cloneNode(true)
+      : document.createElement('article');
+    if (!template) item.className = 'nww-diary-entry';
+    item.dataset.watchLogId = entry.id;
+    const posterEl = item.querySelector('.nww-diary-entry-poster');
+    if (posterEl) {
+      posterEl.innerHTML = entry.poster ? `<img src="${entry.poster}" alt="">` : '';
+    }
+    const titleText = entry.mediaType === 'tv_episode'
+      ? `${entry.seriesTitle || entry.title || 'Untitled'}${entry.episodeTitle ? ` — ${entry.episodeTitle}` : ''}`
+      : entry.title || 'Untitled';
+    item.querySelector('.nww-diary-entry-film').textContent = titleText;
+    item.querySelector('.nww-diary-entry-time').textContent = formatDiaryDate(entry.watchedAt || entry.startedAt);
+    const statusText = entry.status === 'timestamp'
+      ? 'Timestamp · ' + formatDiaryTimestamp(entry.timestampMs)
+      : entry.status;
+    item.querySelector('.nww-diary-entry-status').textContent = entry.rewatch ? `${statusText} · Rewatch` : statusText;
+    const note = entry.note && entry.note.trim()
+      ? entry.note.trim()
+      : [
+          entry.mediaType === 'tv_episode' ? formatDiaryEpisodeCode(entry.seasonNumber, entry.episodeNumber) : null,
+          entry.mediaType === 'tv' ? 'TV Series' : null,
+          entry.year,
+          entry.director,
+        ].filter(Boolean).join(' · ');
+    item.querySelector('.nww-diary-entry-note').textContent = note || 'No note yet.';
+    item.querySelector('.nww-diary-entry-delete')?.setAttribute('data-watch-log-delete', entry.id);
+    list.appendChild(item);
+  });
+}
+
+function renderSessionJournal() {
+  const list = diary.journalList;
+  if (!list) return;
+
+  const signals = loadTasteSignals();
+  if (!signals.length) {
+    list.innerHTML = `
+      <div class="nww-diary-empty">
+        <div class="nww-diary-empty-title">No session journal yet.</div>
+        <div class="nww-diary-empty-copy">Finish a watch session and use the companion to start building reflective entries here.</div>
+      </div>`;
+    updateWatchDiaryToolbar();
+    return;
+  }
+
+  list.innerHTML = '';
+  signals.forEach((signal) => {
+    const entry = document.createElement('details');
+    entry.className = 'watch-journal-entry';
+    entry.dataset.signalTimestamp = String(signal.timestamp);
+    const poster = signal.poster ? `<img src="${signal.poster}" alt="">` : '';
+    const factsCount = Array.isArray(signal.facts) ? signal.facts.length : 0;
+    const chatTurns = signal.chat_turns || 0;
+    const noCompanion = chatTurns === 0 && factsCount === 0;
+    const llm = signal.llm_signals || {};
+    const hasLlmSignals = hasExtractedTasteSignals(llm);
+    const subtitlePills = [
+      `<span class="watch-journal-pill watch-journal-pill--decision">${formatSignalDecision(signal.decision)}</span>`,
+      `<span class="watch-journal-pill">${formatWatchDuration(signal)}</span>`,
+      `<span class="watch-journal-pill">${noCompanion ? 'No companion' : `${chatTurns} chat turns · ${factsCount} facts`}</span>`,
+    ].join('');
+
+    entry.innerHTML = `
+      <summary class="watch-journal-summary">
+        <div class="watch-journal-poster">${poster}</div>
+        <div class="watch-journal-meta">
+          <div class="watch-journal-title">${signal.title || 'Untitled'}${signal.year ? ` <span class="watch-journal-year">(${signal.year})</span>` : ''}</div>
+          <div class="watch-journal-time">${formatDiaryDate(signal.timestamp)}</div>
+          <div class="watch-journal-stats">${subtitlePills}</div>
+        </div>
+        <div class="watch-journal-caret">⌄</div>
+      </summary>
+      <div class="watch-journal-body">
+        <div class="watch-journal-section">
+          <div class="watch-journal-label">Session</div>
+          <div class="watch-journal-grid">
+            <div class="watch-journal-kv">
+              <div class="watch-journal-k">Decision</div>
+              <div class="watch-journal-v">${formatSignalDecision(signal.decision)}</div>
+            </div>
+            <div class="watch-journal-kv">
+              <div class="watch-journal-k">Duration</div>
+              <div class="watch-journal-v">${formatWatchDuration(signal)}</div>
+            </div>
+            <div class="watch-journal-kv">
+              <div class="watch-journal-k">Companion</div>
+              <div class="watch-journal-v">${noCompanion ? 'No companion used' : `${chatTurns} chat turns`}</div>
+            </div>
+            <div class="watch-journal-kv">
+              <div class="watch-journal-k">Facts delivered</div>
+              <div class="watch-journal-v">${factsCount}</div>
+            </div>
+          </div>
+        </div>
+        <div class="watch-journal-section">
+          <div class="watch-journal-actions">
+            <button class="watch-journal-delete" type="button" data-signal-delete="${signal.timestamp}">Delete entry</button>
+          </div>
+        </div>
+        <div class="watch-journal-section">
+          <div class="watch-journal-label">Signals</div>
+          ${hasLlmSignals ? `
+            ${llm.liked?.length ? `<div class="watch-journal-note">Praised</div>${renderSignalTags(llm.liked)}` : ''}
+            ${llm.disliked?.length ? `<div class="watch-journal-note">Friction</div>${renderSignalTags(llm.disliked)}` : ''}
+            ${llm.themes_engaged?.length ? `<div class="watch-journal-note">Themes engaged</div>${renderSignalTags(llm.themes_engaged)}` : ''}
+            ${llm.emotional_reactions?.length ? `<div class="watch-journal-note">Emotional reactions</div>${renderSignalTags(llm.emotional_reactions)}` : ''}
+            ${llm.viewing_style_notes?.length ? `<div class="watch-journal-note">How you engaged</div>${renderSignalTags(llm.viewing_style_notes)}` : ''}
+          ` : `<div class="watch-journal-note">${noCompanion ? 'No companion state for this session.' : 'Structural session metadata only. No extracted LLM signals yet.'}</div>`}
+        </div>
+      </div>
+    `;
+    list.appendChild(entry);
+  });
+  updateWatchDiaryToolbar();
+}
+
+function setWatchDiaryTab(tab) {
+  diary.activeTab = tab;
+  const isLog = tab === 'log';
+  diary.tabLog?.classList.toggle('is-active', isLog);
+  diary.tabJournal?.classList.toggle('is-active', !isLog);
+  diary.tabLog?.setAttribute('aria-selected', isLog ? 'true' : 'false');
+  diary.tabJournal?.setAttribute('aria-selected', isLog ? 'false' : 'true');
+  diary.logPanel?.classList.toggle('is-active', isLog);
+  diary.journalPanel?.classList.toggle('is-active', !isLog);
+  if (diary.logPanel) diary.logPanel.hidden = !isLog;
+  if (diary.journalPanel) diary.journalPanel.hidden = isLog;
+  updateWatchDiaryToolbar();
+}
+
+function setWatchDiaryOpen(open) {
+  diary.isOpen = open;
+  diary.layout?.classList.toggle('watch-diary-open', open);
+  diary.panel?.setAttribute('aria-hidden', open ? 'false' : 'true');
+  diary.toggleBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function closeDiarySearchResults() {
+  if (!diary.searchResults) return;
+  diary.searchResults.classList.remove('is-open');
+  diary.searchResults.innerHTML = '';
+}
+
+async function applyDiarySearchResult(result) {
+  diary.selectedResult = result;
+  if (diary.titleInput) diary.titleInput.value = result.title || '';
+  if (result.media_type === 'tv') {
+    await loadDiaryTvSeasons(result);
+  } else {
+    resetDiarySeriesFields();
+  }
+  closeDiarySearchResults();
+}
+
+function renderDiarySearchResults(results) {
+  if (!diary.searchResults) return;
+  if (!results.length) {
+    diary.searchResults.innerHTML = '<div class="nww-diary-search-empty">No results</div>';
+    diary.searchResults.classList.add('is-open');
+    return;
+  }
+
+  diary.searchResults.innerHTML = '';
+  results.forEach((result) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'nww-diary-search-row';
+    row.innerHTML = `
+      <div class="nww-diary-search-poster">${result.poster ? `<img src="${result.poster}" alt="">` : ''}</div>
+      <div class="nww-diary-search-info">
+        <div class="nww-diary-search-title">${result.title}</div>
+        <div class="nww-diary-search-meta">${[result.year, result.tmdb_rating ? `TMDB ${result.tmdb_rating}` : null].filter(Boolean).join(' · ')}</div>
+      </div>
+      <div class="nww-diary-search-type">${result.media_type === 'tv' ? 'TV' : 'Film'}</div>
+    `;
+    row.addEventListener('click', () => applyDiarySearchResult(result));
+    diary.searchResults.appendChild(row);
+  });
+  diary.searchResults.classList.add('is-open');
 }
 
 // Undo toast
@@ -2270,6 +2920,10 @@ window.addEventListener('popstate', () => {
   render(movies);
   setGridView(gridView);
   renderGridNav();
+  renderWatchDiary();
+  renderSessionJournal();
+  resetWatchDiaryForm();
+  setWatchDiaryTab('log');
   initRecHeading();
   fetchRecommendation();
 
@@ -2279,8 +2933,75 @@ window.addEventListener('popstate', () => {
     loadMovies();
     setGridView(gridView);
     renderGridNav();
+    renderWatchDiary();
+    renderSessionJournal();
   }
 })();
+
+diary.toggleBtn?.addEventListener('click', () => {
+  setWatchDiaryOpen(!diary.isOpen);
+});
+
+diary.closeBtn?.addEventListener('click', () => {
+  setWatchDiaryOpen(false);
+});
+
+diary.tabLog?.addEventListener('click', () => {
+  setWatchDiaryTab('log');
+});
+
+diary.tabJournal?.addEventListener('click', () => {
+  setWatchDiaryTab('journal');
+});
+
+diary.reenrichBtn?.addEventListener('click', () => {
+  reenrichMissingTasteSignals();
+});
+
+diary.titleInput?.addEventListener('input', () => {
+  clearTimeout(diary.searchDebounce);
+  const q = diary.titleInput.value.trim();
+  if (diary.selectedResult && diary.selectedResult.title !== q) {
+    diary.selectedResult = null;
+    resetDiarySeriesFields();
+  }
+  if (q.length < 2) {
+    closeDiarySearchResults();
+    return;
+  }
+  diary.searchDebounce = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/search-movie?q=${encodeURIComponent(q)}&scope=all`);
+      if (!res.ok) throw new Error('search_failed');
+      const results = await res.json();
+      renderDiarySearchResults(results);
+    } catch {
+      if (diary.searchResults) {
+        diary.searchResults.innerHTML = '<div class="nww-diary-search-empty">Search failed</div>';
+        diary.searchResults.classList.add('is-open');
+      }
+    }
+  }, 220);
+});
+
+diary.titleInput?.addEventListener('focus', () => {
+  if ((diary.titleInput.value || '').trim().length >= 2 && diary.searchResults?.children.length) {
+    diary.searchResults.classList.add('is-open');
+  }
+});
+
+diary.seasonInput?.addEventListener('change', () => {
+  const selected = diary.selectedResult;
+  const seasonNumber = parseInt(diary.seasonInput.value, 10) || null;
+  if (!selected?.tmdb_id || !seasonNumber) {
+    if (diary.episodeInput) {
+      diary.episodeInput.innerHTML = '<option value="">Choose episode</option>';
+      diary.episodeInput.disabled = true;
+    }
+    return;
+  }
+  loadDiaryTvEpisodes(selected.tmdb_id, seasonNumber);
+});
 
 
 const AUTOSAVE_LOCK_KEY = 'thecollection_autosave_ts';
@@ -2680,6 +3401,19 @@ const nww = {
   companionSpoiler:   document.getElementById('nww-companion-spoiler'),
   companionClose:     document.getElementById('nww-companion-close'),
   companionOpenBtn:   document.getElementById('nww-companion-open-btn'),
+  diaryPanel:         document.getElementById('nww-diary'),
+  diaryOpenBtn:       document.getElementById('nww-diary-open-btn'),
+  diaryCloseBtn:      document.getElementById('nww-diary-close'),
+  diaryForm:          document.getElementById('nww-diary-form'),
+  diaryTitleInput:    document.getElementById('nww-diary-title-input'),
+  diaryStatusInput:   document.getElementById('nww-diary-status-input'),
+  diaryWatchedAtInput: document.getElementById('nww-diary-watched-at-input'),
+  diaryTimestampInput: document.getElementById('nww-diary-timestamp-input'),
+  diaryNoteInput:     document.getElementById('nww-diary-note-input'),
+  diaryRewatchInput:  document.getElementById('nww-diary-rewatch-input'),
+  diarySubmit:        document.getElementById('nww-diary-submit'),
+  diaryEntries:       document.getElementById('nww-diary-entries'),
+  diaryEntryTemplate: document.getElementById('nww-diary-entry-template'),
   modelSonnet:        document.getElementById('nww-model-sonnet'),
   modelHaiku:         document.getElementById('nww-model-haiku'),
   factsList:          document.getElementById('nww-facts-list'),
@@ -2692,6 +3426,7 @@ const nww = {
   searchDebounce: null,
   state: 'idle', // idle | searching | playing | expanded | deciding
   playingView: 'controls',
+  diaryOpen: false,
   transitionTimers: [],
   transitionToken: 0
 };
@@ -2781,6 +3516,7 @@ function nwwResetTransientStyles() {
   nww.el.style.overflow = '';
   nww.el.classList.remove('nww--suppress-enter');
   nww.el.classList.remove('nww--pill-enter');
+  nww.el.classList.remove('nww--diary-open');
 
   nww.panel.style.transition = '';
   nww.panel.style.opacity = '';
@@ -2803,6 +3539,16 @@ function nwwResetTransientStyles() {
   nww.companionOpenBtn.style.transition = '';
   nww.companionOpenBtn.style.opacity = '';
   nww.companionOpenBtn.style.transform = '';
+  if (nww.diaryPanel) {
+    nww.diaryPanel.style.animation = '';
+    nww.diaryPanel.style.transition = '';
+  }
+  if (nww.diaryOpenBtn) {
+    nww.diaryOpenBtn.style.transition = '';
+    nww.diaryOpenBtn.style.opacity = '';
+    nww.diaryOpenBtn.style.transform = '';
+  }
+  nww.diaryOpen = false;
 }
 
 function nwwCancelTransitions() {
@@ -2838,6 +3584,7 @@ function nwwSetState(state) {
   nww.state = state;
   nww.el.className = 'nww nww--' + state;
   nww.el.dataset.playingView = nww.playingView;
+  if (nww.diaryOpen) nww.el.classList.add('nww--diary-open');
   // Add paused modifier when playing but paused
   const data = loadNowWatching();
   if (state === 'playing' && data && data.pausedAt) {
@@ -3015,12 +3762,14 @@ function nwwActivate(movie, sourceView) {
     startedAt: Date.now(), pausedAt: null, accumulatedMs: 0
   };
   data.companion = nwwDefaultCompanion();
+  ensureDiaryDraftFromSession(data);
   saveNowWatching(data);
   nwwPopulatePlaying(data);
   nwwSetState('playing');
   nwwTriggerPillEnter();
   nwwUpdateDisplay();
   nwwStartInterval();
+  populateWatchDiaryFormFromSession(data);
 
   // Fetch runtime if not known
   if (!runtimeMin && movie.title) {
@@ -3073,6 +3822,97 @@ function nwwSetCompanionOpen(open) {
     data.companion.open = open;
     saveNowWatching(data);
   }
+}
+
+function nwwSetDiaryOpen(open) {
+  nww.diaryOpen = open;
+  nww.el.classList.toggle('nww--diary-open', open);
+  if (nww.diaryPanel) nww.diaryPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
+  if (nww.diaryOpenBtn) nww.diaryOpenBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function nwwOpenDiary() {
+  if (nww.state !== 'expanded' && nww.state !== 'deciding') return;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (nww.el.classList.contains('nww--companion-open')) {
+    nwwSetCompanionOpen(false);
+    nwwRenderCompanion(loadNowWatching());
+  }
+  if (reducedMotion) {
+    nwwCancelTransitions();
+    nwwSetDiaryOpen(true);
+    return;
+  }
+
+  const token = nwwBeginTransition();
+  const btn = nww.diaryOpenBtn;
+  if (btn) {
+    btn.style.transition = 'opacity 0.12s ease-in, transform 0.12s cubic-bezier(0.23, 1, 0.32, 1)';
+    btn.style.opacity = '0';
+    btn.style.transform = 'scale(0.94) translateY(2px)';
+  }
+
+  nww.panel.style.setProperty('animation', 'none', 'important');
+  const startH = nww.panel.getBoundingClientRect().height;
+  nww.panel.style.height = startH + 'px';
+  nww.panel.style.transition = 'height 0.28s cubic-bezier(0.23, 1, 0.32, 1)';
+  void nww.panel.offsetHeight;
+  nww.panel.style.height = '640px';
+
+  nwwQueueTransition(token, 290, () => {
+    nww.panel.style.transition = '';
+
+    nwwAnimateWidgetFlip(() => {
+      nwwSetDiaryOpen(true);
+    }, 380, token);
+
+    nww.panel.style.setProperty('animation', 'nww-panel-diary-shift-left 0.34s cubic-bezier(0.23, 1, 0.32, 1) both', 'important');
+    nww.panel.addEventListener('animationend', () => {
+      nww.panel.style.removeProperty('animation');
+      nww.panel.style.height = '';
+    }, { once: true });
+  });
+
+  nwwQueueTransition(token, 180, () => {
+    if (!btn) return;
+    btn.style.transition = '';
+    btn.style.opacity = '';
+    btn.style.transform = '';
+  });
+}
+
+function nwwCloseDiary() {
+  if (!nww.diaryOpen) return;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reducedMotion) {
+    nwwCancelTransitions();
+    nwwSetDiaryOpen(false);
+    return;
+  }
+
+  const token = nwwBeginTransition();
+  if (nww.diaryPanel) {
+    nww.diaryPanel.style.animation = 'nww-diary-drop-out 0.22s cubic-bezier(0.23, 1, 0.32, 1) both';
+  }
+  nww.panel.style.setProperty('animation', 'nww-panel-diary-shift-right 0.28s cubic-bezier(0.23, 1, 0.32, 1) both', 'important');
+  nww.panel.addEventListener('animationend', () => nww.panel.style.removeProperty('animation'), { once: true });
+
+  nwwQueueTransition(token, 220, () => {
+    nww.panel.style.height = nww.panel.getBoundingClientRect().height + 'px';
+    nwwAnimateWidgetFlip(() => {
+      nwwSetDiaryOpen(false);
+    }, 320, token);
+
+    nwwQueueTransition(token, 20, () => {
+      if (nww.diaryPanel) nww.diaryPanel.style.animation = '';
+      nww.panel.style.transition = 'height 0.28s cubic-bezier(0.23, 1, 0.32, 1)';
+      nww.panel.style.height = '412px';
+      nwwQueueTransition(token, 300, () => {
+        nww.panel.style.transition = '';
+        nww.panel.style.height = '';
+      });
+    });
+  });
 }
 
 function nwwCompanionUpdateFooter(sessionCost) {
@@ -3148,6 +3988,7 @@ function nwwAppendTyping() {
 }
 
 async function nwwFetchFacts(data) {
+  if (!isAiEnabled()) return;
   if (!data.companion) data.companion = nwwDefaultCompanion();
   data.companion.facts_loading = true;
   saveNowWatching(data);
@@ -3256,6 +4097,7 @@ function nwwMaybeDeliverFact(elapsedMs, data) {
 }
 
 async function nwwSendChat(message) {
+  if (!isAiEnabled()) return;
   const data = loadNowWatching();
   if (!data?.companion) return;
 
@@ -3319,8 +4161,8 @@ async function nwwSendChat(message) {
     errEl.classList.add('nww-msg-error');
   }
 
-  nww.chatSend.disabled = false;
-  nww.chatInput.focus();
+  nww.chatSend.disabled = !isAiEnabled();
+  if (isAiEnabled()) nww.chatInput.focus();
 }
 
 function nwwExtractTasteSignal(data, decision) {
@@ -3333,6 +4175,7 @@ function nwwExtractTasteSignal(data, decision) {
     title:              data.title,
     year:               data.year,
     director:           data.director,
+    poster:             data.poster || null,
     decision,
     elapsed_pct,
     runtime_min:        data.runtime || null,
@@ -3349,38 +4192,51 @@ function nwwExtractTasteSignal(data, decision) {
     signals.unshift(signal);
     if (signals.length > 50) signals.length = 50;
     localStorage.setItem(TASTE_SIGNALS_KEY, JSON.stringify(signals));
+    renderSessionJournal();
     schedulePush();
   } catch {}
 
   // Fire-and-forget LLM extraction — only when there's a conversation to analyze
   if (chatHistory.length >= 2) {
-    fetch('/api/companion-chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action:       'extract',
-        title:        data.title,
-        year:         data.year,
-        director:     data.director,
+    if (!isAiEnabled()) {
+      // Buffer for drain when AI is re-enabled
+      try {
+        const buf = loadAiBuffer();
+        buf.unshift({
+          title:        data.title,
+          year:         data.year,
+          director:     data.director,
+          decision,
+          chat_history: chatHistory,
+          facts:        data.companion?.facts || [],
+          timestamp:    signal.timestamp,
+        });
+        saveAiBuffer(buf.slice(0, 50));
+      } catch {}
+    } else {
+      requestTasteSignalExtraction({
+        title: data.title,
+        year: data.year,
+        director: data.director,
         decision,
         chat_history: chatHistory,
-        facts:        data.companion?.facts || [],
-      }),
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(json => {
-        if (!json?.signals) return;
-        try {
-          const signals = JSON.parse(localStorage.getItem(TASTE_SIGNALS_KEY) || '[]');
-          const entry = signals.find(s => s.title === data.title && s.timestamp === signal.timestamp);
-          if (entry) {
-            entry.llm_signals = json.signals;
-            localStorage.setItem(TASTE_SIGNALS_KEY, JSON.stringify(signals));
-            schedulePush();
-          }
-        } catch {}
+        facts: data.companion?.facts || [],
       })
-      .catch(() => {}); // non-critical — never fail the decision flow
+        .then((signalsPayload) => {
+          if (!signalsPayload) return;
+          try {
+            const signals = JSON.parse(localStorage.getItem(TASTE_SIGNALS_KEY) || '[]');
+            const entry = signals.find(s => s.title === data.title && s.timestamp === signal.timestamp);
+            if (entry) {
+              entry.llm_signals = signalsPayload;
+              localStorage.setItem(TASTE_SIGNALS_KEY, JSON.stringify(signals));
+              renderSessionJournal();
+              schedulePush();
+            }
+          } catch {}
+        })
+        .catch(() => {}); // non-critical — never fail the decision flow
+    }
   }
 }
 
@@ -3392,6 +4248,7 @@ nww.companionOpenBtn.addEventListener('click', () => {
     data.companion = nwwDefaultCompanion();
     saveNowWatching(data);
   }
+  if (nww.diaryOpen) nwwSetDiaryOpen(false);
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -3471,6 +4328,133 @@ nww.companionClose.addEventListener('click', () => {
   });
 });
 
+nww.diaryOpenBtn?.addEventListener('click', () => {
+  if (nww.diaryOpen) nwwCloseDiary();
+  else nwwOpenDiary();
+});
+
+nww.diaryCloseBtn?.addEventListener('click', () => {
+  nwwCloseDiary();
+});
+
+diary.statusInput?.addEventListener('change', () => {
+  setDiaryTimestampFieldVisibility();
+});
+
+diary.form?.addEventListener('submit', (e) => {
+  e.preventDefault();
+
+  const title = diary.titleInput?.value.trim() || '';
+  const status = diary.statusInput?.value || 'finished';
+  const watchedAtRaw = diary.watchedAtInput?.value;
+  const note = diary.noteInput?.value.trim() || '';
+  const rewatch = !!diary.rewatchInput?.checked;
+  const timestampMs = status === 'timestamp'
+    ? parseDiaryTimestampInput(diary.timestampInput?.value || '')
+    : null;
+
+  if (!title) {
+    diary.titleInput?.focus();
+    return;
+  }
+  if (status === 'timestamp' && timestampMs === null) {
+    diary.timestampInput?.focus();
+    return;
+  }
+
+  const watchedAt = watchedAtRaw
+    ? new Date(watchedAtRaw).toISOString()
+    : new Date().toISOString();
+  const selected = diary.selectedResult && diary.selectedResult.title === title
+    ? diary.selectedResult
+    : null;
+  const seasonNumber = parseInt(diary.seasonInput?.value || '', 10) || null;
+  const episodeNumber = parseInt(diary.episodeInput?.value || '', 10) || null;
+  const episodeTitle = episodeNumber
+    ? diary.episodeInput?.selectedOptions?.[0]?.dataset?.episodeTitle || ''
+    : '';
+  const active = loadNowWatching();
+  const canUpdateActive = active && active.diaryEntryId && active.title === title;
+
+  if (selected?.media_type === 'tv' && seasonNumber && !episodeNumber) {
+    diary.episodeInput?.focus();
+    return;
+  }
+
+  if (canUpdateActive) {
+    updateDiaryEntryFromSession(active, {
+      status,
+      watchedAt,
+      note,
+      rewatch,
+      timestampMs: status === 'timestamp' ? timestampMs : null,
+    });
+    populateWatchDiaryFormFromSession(active);
+    diary.watchedAtInput.value = watchedAtRaw || formatDiaryDateInput(watchedAt);
+    diary.statusInput.value = status;
+    diary.noteInput.value = note;
+    diary.rewatchInput.checked = rewatch;
+    diary.timestampInput.value = status === 'timestamp' ? formatDiaryTimestamp(timestampMs) : '';
+    setDiaryTimestampFieldVisibility();
+    return;
+  }
+
+  upsertWatchLogEntry({
+    id: createWatchLogId(),
+    title: selected?.media_type === 'tv' ? (episodeTitle || title) : title,
+    seriesTitle: selected?.media_type === 'tv' ? title : null,
+    year: selected?.year || null,
+    poster: selected?.poster || null,
+    mediaType: selected?.media_type === 'tv'
+      ? (episodeNumber ? 'tv_episode' : 'tv')
+      : 'movie',
+    tmdbId: selected?.tmdb_id || null,
+    seasonNumber: selected?.media_type === 'tv' ? seasonNumber : null,
+    episodeNumber: selected?.media_type === 'tv' ? episodeNumber : null,
+    episodeTitle: selected?.media_type === 'tv' ? (episodeTitle || null) : null,
+    watchedAt,
+    startedAt: watchedAt,
+    status,
+    timestampMs: status === 'timestamp' ? timestampMs : null,
+    note,
+    rewatch,
+    source: 'manual',
+  });
+  resetWatchDiaryForm();
+});
+
+diary.entries?.addEventListener('click', (e) => {
+  const deleteBtn = e.target.closest('[data-watch-log-delete]');
+  if (!deleteBtn) return;
+  const id = deleteBtn.getAttribute('data-watch-log-delete');
+  if (!id) return;
+  deleteWatchLogEntry(id);
+
+  const active = loadNowWatching();
+  if (active?.diaryEntryId === id) {
+    delete active.diaryEntryId;
+    saveNowWatching(active);
+    populateWatchDiaryFormFromSession(active);
+  }
+});
+
+diary.journalList?.addEventListener('click', (e) => {
+  const deleteBtn = e.target.closest('[data-signal-delete]');
+  if (!deleteBtn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const timestamp = Number(deleteBtn.getAttribute('data-signal-delete'));
+  if (!Number.isFinite(timestamp)) return;
+  deleteTasteSignal(timestamp);
+});
+
+document.addEventListener('click', (e) => {
+  if (!diary.searchResults || !diary.titleInput) return;
+  if (!diary.searchResults.contains(e.target) && e.target !== diary.titleInput) {
+    closeDiarySearchResults();
+  }
+});
+
 nww.companionSpoiler.addEventListener('change', () => {
   const data = loadNowWatching();
   if (!data?.companion) return;
@@ -3516,15 +4500,16 @@ function nwwToIdle() {
   nwwCancelTransitions();
   nwwStopInterval();
   clearNowWatching();
+  resetWatchDiaryForm();
   nwwSetPlayingView('controls');
   nwwSetState('idle');
-  nww.el.classList.remove('nww--complete', 'nww--companion-open');
+  nww.el.classList.remove('nww--complete', 'nww--companion-open', 'nww--diary-open');
   nwwRenderCompanion(null);
   markDirty(gridView);
   setGridView(gridView);
 }
 
-function nwwCommitDecision(target) {
+function nwwCommitDecision(target, diaryStatus = 'finished') {
   const data = loadNowWatching();
   if (!data) return;
   const src = data.sourceView;
@@ -3532,6 +4517,11 @@ function nwwCommitDecision(target) {
 
   // Clear session before re-rendering so the live border is gone immediately
   nwwStopInterval();
+  updateDiaryEntryFromSession(data, {
+    status: diaryStatus,
+    timestampMs: diaryStatus === 'timestamp' ? nwwGetElapsed(data) : null,
+    watchedAt: new Date().toISOString(),
+  });
   nwwExtractTasteSignal(data, target);
   clearNowWatching();
 
@@ -3721,6 +4711,11 @@ nww.pauseBtn.addEventListener('click', () => {
     nww.pauseBtn.textContent = 'Resume';
     nww.el.classList.add('nww--paused');
     saveNowWatching(data);
+    updateDiaryEntryFromSession(data, {
+      status: 'timestamp',
+      timestampMs: data.accumulatedMs,
+      watchedAt: new Date().toISOString(),
+    });
     nwwStopInterval();
     nwwUpdateDisplay();
   }
@@ -3732,7 +4727,7 @@ nww.doneBtn.addEventListener('click', () => {
   nwwUpdateDisplay();
 });
 
-nww.abandonBtn.addEventListener('click', () => nwwCommitDecision('banned'));
+nww.abandonBtn.addEventListener('click', () => nwwCommitDecision('banned', 'abandoned'));
 
 nww.decCollection.addEventListener('click', () => nwwCommitDecision('collection'));
 nww.decMeh.addEventListener('click', () => nwwCommitDecision('meh'));
@@ -4125,3 +5120,56 @@ searchBackdrop.addEventListener('click', (e) => { if (e.target === searchBackdro
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && searchBackdrop.style.display !== 'none') closeSearchModal();
 });
+
+// ── AI master toggle ──────────────────────────────────────────────────────────
+
+async function drainAiBuffer() {
+  const buf = loadAiBuffer();
+  if (!buf.length) return;
+  saveAiBuffer([]); // clear immediately — partial drain on page close is acceptable
+  for (const item of buf) {
+    if (!canReenrichTasteSignal(item)) continue;
+    try {
+      const signalsPayload = await requestTasteSignalExtraction(item);
+      if (!signalsPayload) continue;
+      const signals = JSON.parse(localStorage.getItem(TASTE_SIGNALS_KEY) || '[]');
+      const entry = signals.find(s => s.title === item.title && s.timestamp === item.timestamp);
+      if (entry) {
+        entry.llm_signals = signalsPayload;
+        localStorage.setItem(TASTE_SIGNALS_KEY, JSON.stringify(signals));
+        renderSessionJournal();
+        schedulePush();
+      }
+    } catch {} // non-critical
+  }
+}
+
+function applyAiToggleState() {
+  const on = isAiEnabled();
+
+  // Dim rec sub-controls when AI is off
+  const headingRow = document.getElementById('rec-heading-row');
+  if (headingRow) headingRow.classList.toggle('rec-heading-row--ai-off', !on);
+
+  // Re-render recommendation area to reflect new gate state
+  renderRecommendation();
+
+  // Companion send button + input
+  nww.chatSend.disabled = !on;
+  nww.chatInput.disabled = !on;
+  nww.chatInput.placeholder = on ? 'Ask anything about this film…' : 'AI is disabled';
+}
+
+function initAiToggle() {
+  const checkbox = document.getElementById('nav-ai-checkbox');
+  if (!checkbox) return;
+  checkbox.checked = isAiEnabled();
+  checkbox.addEventListener('change', () => {
+    setAiEnabled(checkbox.checked);
+    applyAiToggleState();
+    if (checkbox.checked) drainAiBuffer();
+  });
+  applyAiToggleState();
+}
+
+initAiToggle();

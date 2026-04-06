@@ -91,10 +91,13 @@ All keys prefixed `thecollection_`:
 | `thecollection_sort_*` | Per-view sort modes |
 | `thecollection_rec_cache` | Cached last recommendation |
 | `thecollection_taste_signals` | Watch session outcome signals (array, newest first, max 50) |
+| `thecollection_watch_log` | Watching diary / watch log entries (array, newest first) |
 | `thecollection_wtw_country` | User's selected country code for "Where to watch" (ISO 3166-1 alpha-2, e.g. `PL`) |
 | `thecollection_providers_<tmdb_id>` | Cached watch provider data per film `{ data, ts }` — 24h TTL |
 | `thecollection_anticipated` | Anticipated list — `[{ title, year, director, poster, release_date, addedAt }]` sorted chronologically on render |
 | `thecollection_tex_<title>` | Persisted fold texture pair `{hl, sh}` as JPEG data URIs — generated once per movie, never regenerated unless cleared |
+| `thecollection_ai_enabled` | Master AI toggle: `'1'` = on, absent/`'0'` = off (default off for all users) |
+| `thecollection_ai_buffer` | Sessions pending LLM signal extraction while AI was off — drained immediately on re-enable |
 
 ## Key Architecture Patterns
 
@@ -122,7 +125,7 @@ All keys prefixed `thecollection_`:
 - `updateRecCostHint()` only shows actual cost when `currentRec._model === currentModel` — otherwise shows estimate
 
 ### Snapshots
-- `applySnapshot(snap)` in `settings-app.js` must restore **all 7 fields**: `movies`, `watchlist`, `maybe`, `meh`, `banned`, `standards`, `totalCost`
+- `applySnapshot(snap)` in `settings-app.js` must restore **all 8 fields**: `movies`, `watchlist`, `maybe`, `meh`, `banned`, `standards`, `watch_log`, `totalCost`
 - Missing any field silently drops that data on restore
 
 ### Taste Profile

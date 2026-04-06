@@ -14,21 +14,138 @@
   <header>
     <a href="movies.html" class="site-title">The Collection</a>
     <nav>
+      <button class="nav-link nav-link-diary" id="watch-diary-toggle" type="button" aria-controls="watch-diary-panel" aria-expanded="false">Diary</button>
+      <label class="nav-ai-toggle" id="nav-ai-toggle" title="Enable AI features">
+        <input type="checkbox" id="nav-ai-checkbox">
+        <span class="nav-ai-switch"></span>
+        <span class="nav-ai-label">AI</span>
+      </label>
       <a href="settings.html" class="nav-link nav-link-settings">Settings</a>
     </nav>
   </header>
 
-  <main>
-    <div class="recommendation" id="recommendation"></div>
-    <div class="grid-nav" id="grid-nav"></div>
-    <div id="standards-wrap"></div>
-    <div id="persona-wrap"></div>
-    <div class="grid" id="grid-collection"></div>
-    <div class="grid" id="grid-watchlist" style="display:none"></div>
-    <div class="grid" id="grid-maybe"     style="display:none"></div>
-    <div class="grid" id="grid-meh"       style="display:none"></div>
-    <div class="grid" id="grid-banned"       style="display:none"></div>
-    <div class="grid" id="grid-anticipated" style="display:none"></div>
+  <main class="movies-layout" id="movies-layout">
+    <div class="movies-content" id="movies-content">
+      <div class="recommendation" id="recommendation"></div>
+      <div class="grid-nav" id="grid-nav"></div>
+      <div id="standards-wrap"></div>
+      <div id="persona-wrap"></div>
+      <div class="grid" id="grid-collection"></div>
+      <div class="grid" id="grid-watchlist" style="display:none"></div>
+      <div class="grid" id="grid-maybe"     style="display:none"></div>
+      <div class="grid" id="grid-meh"       style="display:none"></div>
+      <div class="grid" id="grid-banned"       style="display:none"></div>
+      <div class="grid" id="grid-anticipated" style="display:none"></div>
+    </div>
+
+    <aside class="watch-diary-panel" id="watch-diary-panel" aria-labelledby="watch-diary-title" aria-hidden="true">
+      <div class="nww-diary-header">
+        <div class="nww-diary-header-copy">
+          <div class="nww-diary-kicker">Watching Diary</div>
+          <div class="nww-diary-title" id="watch-diary-title">Watch Log</div>
+          <div class="nww-diary-subtitle">A private timeline of what you watched, when you stopped, and how each viewing ended.</div>
+        </div>
+        <button class="nww-diary-close" id="watch-diary-close" type="button" aria-label="Close diary panel">✕</button>
+      </div>
+
+      <div class="watch-diary-tabs" id="watch-diary-tabs" role="tablist" aria-label="Diary views">
+        <button class="watch-diary-tab is-active" id="watch-diary-tab-log" type="button" role="tab" aria-selected="true" aria-controls="watch-diary-log-panel">Watch Log</button>
+        <button class="watch-diary-tab" id="watch-diary-tab-journal" type="button" role="tab" aria-selected="false" aria-controls="watch-diary-journal-panel">Session Journal</button>
+      </div>
+
+      <div class="watch-diary-toolbar" id="watch-diary-toolbar">
+        <button class="watch-diary-toolbar-btn" id="watch-journal-reenrich-btn" type="button" hidden>Re-enrich signals</button>
+      </div>
+
+      <div class="watch-diary-panel-view is-active" id="watch-diary-log-panel" role="tabpanel" aria-labelledby="watch-diary-tab-log">
+      <form class="nww-diary-form" id="nww-diary-form">
+        <div class="nww-diary-form-grid">
+          <label class="nww-diary-field">
+            <span class="nww-diary-label">Film</span>
+            <input class="nww-diary-input" id="nww-diary-title-input" name="title" type="text" placeholder="Film title" autocomplete="off" />
+            <div class="nww-diary-search-results" id="nww-diary-search-results" aria-live="polite"></div>
+          </label>
+          <label class="nww-diary-field nww-diary-field-series" id="nww-diary-season-field">
+            <span class="nww-diary-label">Season</span>
+            <select class="nww-diary-input" id="nww-diary-season-input" name="season">
+              <option value="">Choose season</option>
+            </select>
+          </label>
+          <label class="nww-diary-field nww-diary-field-series" id="nww-diary-episode-field">
+            <span class="nww-diary-label">Episode</span>
+            <select class="nww-diary-input" id="nww-diary-episode-input" name="episode">
+              <option value="">Choose episode</option>
+            </select>
+          </label>
+          <label class="nww-diary-field">
+            <span class="nww-diary-label">Watched</span>
+            <input class="nww-diary-input" id="nww-diary-watched-at-input" name="watchedAt" type="date" />
+          </label>
+          <label class="nww-diary-field">
+            <span class="nww-diary-label">Status</span>
+            <select class="nww-diary-input" id="nww-diary-status-input" name="status">
+              <option value="finished">Finished</option>
+              <option value="abandoned">Abandoned</option>
+              <option value="timestamp">Timestamp</option>
+            </select>
+          </label>
+          <label class="nww-diary-field">
+            <span class="nww-diary-label">Stop point</span>
+            <input class="nww-diary-input" id="nww-diary-timestamp-input" name="timestamp" type="text" placeholder="01:14:32" />
+          </label>
+          <label class="nww-diary-field nww-diary-field-note">
+            <span class="nww-diary-label">Note</span>
+            <textarea class="nww-diary-textarea" id="nww-diary-note-input" name="note" rows="4" placeholder="Short reflection, one line, or a few notes..."></textarea>
+          </label>
+        </div>
+        <div class="nww-diary-form-actions">
+          <label class="nww-diary-flag">
+            <input type="checkbox" id="nww-diary-rewatch-input" name="rewatch" />
+            <span>Rewatch</span>
+          </label>
+          <button class="nww-diary-submit" id="nww-diary-submit" type="submit">Add entry</button>
+        </div>
+      </form>
+
+      <div class="nww-diary-entries-header">
+        <div class="nww-diary-entries-title">Timeline</div>
+        <div class="nww-diary-entries-subtitle">Newest first</div>
+      </div>
+
+      <div class="nww-diary-entries" id="nww-diary-entries" aria-live="polite">
+        <div class="nww-diary-empty">
+          <div class="nww-diary-empty-title">No diary entries yet.</div>
+          <div class="nww-diary-empty-copy">Use the form above or start a session with Watch Now to add your first entry.</div>
+        </div>
+      </div>
+      </div>
+
+      <template id="nww-diary-entry-template">
+        <article class="nww-diary-entry">
+          <div class="nww-diary-entry-poster"></div>
+          <div class="nww-diary-entry-main">
+            <div class="nww-diary-entry-meta">
+              <div class="nww-diary-entry-film"></div>
+              <div class="nww-diary-entry-time"></div>
+            </div>
+            <div class="nww-diary-entry-status"></div>
+            <div class="nww-diary-entry-note"></div>
+          </div>
+          <div class="nww-diary-entry-actions">
+            <button class="nww-diary-entry-delete" type="button">Delete</button>
+          </div>
+        </article>
+      </template>
+
+      <div class="watch-diary-panel-view" id="watch-diary-journal-panel" role="tabpanel" aria-labelledby="watch-diary-tab-journal" hidden>
+        <div class="watch-journal-list" id="watch-journal-list" aria-live="polite">
+          <div class="nww-diary-empty">
+            <div class="nww-diary-empty-title">No session journal yet.</div>
+            <div class="nww-diary-empty-copy">Finish a watch session and use the companion to start building reflective entries here.</div>
+          </div>
+        </div>
+      </div>
+    </aside>
   </main>
 
   <!-- Now Watching Widget -->
