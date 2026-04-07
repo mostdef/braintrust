@@ -15,10 +15,13 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   // Auth gate
+  let user = null;
   if (getAuthenticatedUser) {
-    const user = await getAuthenticatedUser(req);
+    user = await getAuthenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
   }
+  const gate = await require('./_ai-gate')(user);
+  if (gate) return res.status(402).json(gate);
 
   const { prompt } = req.body || {};
   if (!prompt) return res.status(400).end();

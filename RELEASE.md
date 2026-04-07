@@ -2,6 +2,27 @@
 
 ---
 
+## Latest — 2026-04-07
+
+### Server-Side AI Gate
+- Toggling AI off now syncs immediately to the server — API calls are blocked server-side, not just in the UI
+- Each AI route (recommendations, companion chat, facts, persona, image) checks the gate before calling any external AI service
+- Three distinct server responses: `ai_disabled` (toggle is off), `budget_exhausted` (monthly cap reached), `out_of_credits` (API balance empty) — each shows a specific message rather than a generic error
+- AI preference is written to Supabase on toggle and read back on page load, so the state is consistent across devices
+- Supabase schema gains four new columns: `ai_enabled`, `spend_month`, `spend_cap`, `spend_month_key` — foundation for per-user monthly budget enforcement
+
+### Session Journal
+- Posters now appear on journal entries even when the signal was recorded before poster storage was added — falls back to looking the film up in your current lists
+- Re-enrich button is disabled (not hidden) when AI is off, and the server gate blocks the underlying call as a backstop
+
+### Snapshots
+- Session Journal signals (`thecollection_taste_signals`) are now included in snapshots and restored alongside the watch log — previously a restore would leave the journal empty
+
+### Bug Fixes
+- Re-enrich signals button no longer fires API calls when AI is toggled off
+
+---
+
 ## Latest — 2026-04-06
 
 ### Film Deep Links

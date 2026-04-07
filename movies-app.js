@@ -716,7 +716,18 @@ const AI_BUFFER_KEY      = 'thecollection_ai_buffer';
 function isRecEnabled() { return localStorage.getItem(REC_ENABLED_KEY) === '1'; }
 function setRecEnabled(v) { localStorage.setItem(REC_ENABLED_KEY, v ? '1' : '0'); }
 function isAiEnabled() { return localStorage.getItem(AI_ENABLED_KEY) === '1'; }
-function setAiEnabled(v) { localStorage.setItem(AI_ENABLED_KEY, v ? '1' : '0'); }
+function setAiEnabled(v) {
+  localStorage.setItem(AI_ENABLED_KEY, v ? '1' : '0');
+  // Sync immediately to server so the AI gate reflects the new state
+  getAuthToken().then(token => {
+    if (!token) return;
+    fetch('/api/user-data', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ ai_enabled: v }),
+    }).catch(() => {});
+  }).catch(() => {});
+}
 function loadAiBuffer() { try { return JSON.parse(localStorage.getItem(AI_BUFFER_KEY) || '[]'); } catch { return []; } }
 function saveAiBuffer(buf) { localStorage.setItem(AI_BUFFER_KEY, JSON.stringify(buf)); }
 
@@ -769,6 +780,8 @@ async function doFetchRec(excluded, attempt = 0) {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     if (body.error === 'out_of_credits') throw 'out_of_credits';
+    if (body.error === 'ai_disabled') throw 'ai_disabled';
+    if (body.error === 'budget_exhausted') throw 'budget_exhausted';
     if (body.error === 'invalid_rec') {
       if (body.title) sessionExcluded.add(body.title);
       return doFetchRec(buildExcluded(), attempt + 1);
@@ -859,7 +872,7 @@ async function fetchRecommendation() {
       recError = true;
     }
   } catch (e) {
-    recError = e === 'out_of_credits' ? 'out_of_credits' : true;
+    recError = ['out_of_credits', 'ai_disabled', 'budget_exhausted'].includes(e) ? e : true;
   }
 
   recFetchInFlight = false;
@@ -1003,9 +1016,11 @@ function renderRecommendation() {
     const errorBanner = document.createElement('div');
     errorBanner.className = 'rec-banner rec-banner-error';
     const msg = document.createElement('span');
-    msg.textContent = recError === 'out_of_credits'
-      ? 'Out of API credits. Top up at console.anthropic.com to get recommendations.'
-      : 'Could not load recommendation.';
+    msg.textContent =
+      recError === 'out_of_credits'  ? 'Out of API credits. Top up at console.anthropic.com to get recommendations.' :
+      recError === 'budget_exhausted' ? 'Monthly AI budget reached. Resets next month.' :
+      recError === 'ai_disabled'      ? 'AI is disabled. Enable it with the toggle in the nav.' :
+                                        'Could not load recommendation.';
     errorBanner.appendChild(msg);
     const retryBtn = document.createElement('button');
     retryBtn.className = 'rec-btn rec-btn-secondary';
@@ -1272,6 +1287,7 @@ totalCost = parseFloat(localStorage.getItem(TOTAL_COST_KEY) || '0') || 0;
 const diary = {
   layout:            document.getElementById('movies-layout'),
   panel:             document.getElementById('watch-diary-panel'),
+  shellHead:         document.getElementById('watch-diary-shell-head'),
   toggleBtn:         document.getElementById('watch-diary-toggle'),
   closeBtn:          document.getElementById('watch-diary-close'),
   confirmBackdrop:   document.getElementById('watch-diary-confirm-backdrop'),
@@ -1285,6 +1301,10 @@ const diary = {
   logPanel:          document.getElementById('watch-diary-log-panel'),
   journalPanel:      document.getElementById('watch-diary-journal-panel'),
   composer:          document.getElementById('nww-diary-composer'),
+  placementPrompt:   document.getElementById('diary-placement-prompt'),
+  placementTitle:    document.getElementById('diary-placement-title'),
+  placementSubmsg:   document.getElementById('diary-placement-submsg'),
+  placementDismiss:  document.getElementById('diary-placement-dismiss'),
   composerToggle:    document.getElementById('nww-diary-composer-toggle'),
   form:              document.getElementById('nww-diary-form'),
   formGrid:          document.querySelector('#nww-diary-form .nww-diary-form-grid'),
@@ -1303,8 +1323,13 @@ const diary = {
   timestampInput:    document.getElementById('nww-diary-timestamp-input'),
   noteInput:         document.getElementById('nww-diary-note-input'),
   rewatchInput:      document.getElementById('nww-diary-rewatch-input'),
+  cancel:            document.getElementById('nww-diary-cancel'),
   submit:            document.getElementById('nww-diary-submit'),
   entries:           document.getElementById('nww-diary-entries'),
+  addDateBtn:        document.getElementById('nww-diary-add-date-btn'),
+  addDateInline:     document.getElementById('nww-diary-add-date-inline'),
+  addDateInput:      document.getElementById('nww-diary-add-date-input'),
+  addDateConfirm:    document.getElementById('nww-diary-add-date-confirm'),
   entryTemplate:     document.getElementById('nww-diary-entry-template'),
   journalList:       document.getElementById('watch-journal-list'),
   isOpen: false,
@@ -1315,7 +1340,16 @@ const diary = {
   reenrichInFlight: false,
   pendingDeleteId: null,
   composerOpen: false,
+  editingEntryId: null,
+  placementPrompt: null,
+  placementMovie: null,
 };
+
+function updateWatchDiaryShellMetrics() {
+  if (!diary.panel || !diary.shellHead) return;
+  const headHeight = Math.ceil(diary.shellHead.getBoundingClientRect().height || 0);
+  diary.panel.style.setProperty('--watch-diary-head-height', `${headHeight}px`);
+}
 
 // ── Supabase sync ─────────────────────────────────────────────────────────────
 // Hydrate localStorage from Supabase on load, then push changes back debounced.
@@ -1367,6 +1401,7 @@ async function supabaseHydrate() {
     set(STANDARDS_KEY,  data.standards);
     set(WATCH_LOG_KEY,  data.watch_log);
     if (data.total_cost !== undefined) { localStorage.setItem(TOTAL_COST_KEY, String(data.total_cost)); changed = true; }
+    if (data.ai_enabled !== undefined) { localStorage.setItem(AI_ENABLED_KEY, data.ai_enabled ? '1' : '0'); changed = true; }
     return changed;
   } catch(e) { return false; }
 }
@@ -1386,7 +1421,8 @@ function saveSnapshot(label = '') {
     meh:       JSON.parse(localStorage.getItem(MEH_KEY)       || '[]'),
     banned:    JSON.parse(localStorage.getItem(BANNED_KEY)    || '[]'),
     standards: JSON.parse(localStorage.getItem(STANDARDS_KEY) || '[]'),
-    watch_log: JSON.parse(localStorage.getItem(WATCH_LOG_KEY) || '[]'),
+    watch_log:     JSON.parse(localStorage.getItem(WATCH_LOG_KEY)      || '[]'),
+    taste_signals: JSON.parse(localStorage.getItem(TASTE_SIGNALS_KEY) || '[]'),
     totalCost: totalCost,
   };
   const snapshots = loadSnapshots();
@@ -1411,7 +1447,8 @@ function restoreSnapshot(snap) {
   localStorage.setItem(MEH_KEY,       JSON.stringify(snap.meh || []));
   localStorage.setItem(BANNED_KEY,    JSON.stringify(snap.banned));
   if (snap.standards) localStorage.setItem(STANDARDS_KEY, JSON.stringify(snap.standards));
-  localStorage.setItem(WATCH_LOG_KEY, JSON.stringify(snap.watch_log || snap.watchLog || []));
+  localStorage.setItem(WATCH_LOG_KEY,      JSON.stringify(snap.watch_log     || snap.watchLog || []));
+  localStorage.setItem(TASTE_SIGNALS_KEY, JSON.stringify(snap.taste_signals || []));
   if (snap.totalCost != null) {
     totalCost = snap.totalCost;
     localStorage.setItem(TOTAL_COST_KEY, totalCost.toFixed(6));
@@ -1447,6 +1484,24 @@ function saveWatchLog(entries) {
 
 function sortWatchLog(entries) {
   return entries.slice().sort((a, b) => {
+    const aDayKey = getDiaryDayKey(a.watchedAt || a.startedAt || a.createdAt);
+    const bDayKey = getDiaryDayKey(b.watchedAt || b.startedAt || b.createdAt);
+    const aDayTs = Date.parse(aDayKey ? `${aDayKey}T00:00:00` : 0) || 0;
+    const bDayTs = Date.parse(bDayKey ? `${bDayKey}T00:00:00` : 0) || 0;
+    if (bDayTs !== aDayTs) return bDayTs - aDayTs;
+
+    const aIsDateMarker = a.type === 'date_marker';
+    const bIsDateMarker = b.type === 'date_marker';
+    if (aIsDateMarker !== bIsDateMarker) return aIsDateMarker ? -1 : 1;
+
+    const aManual = Number.isFinite(a.manualOrder) ? a.manualOrder : null;
+    const bManual = Number.isFinite(b.manualOrder) ? b.manualOrder : null;
+    if (aManual !== null || bManual !== null) {
+      if (aManual === null) return 1;
+      if (bManual === null) return -1;
+      if (aManual !== bManual) return aManual - bManual;
+    }
+
     const aWatchTs = Date.parse(a.watchedAt || a.startedAt || a.createdAt || 0) || 0;
     const bWatchTs = Date.parse(b.watchedAt || b.startedAt || b.createdAt || 0) || 0;
     if (bWatchTs !== aWatchTs) return bWatchTs - aWatchTs;
@@ -1460,8 +1515,15 @@ function sortWatchLog(entries) {
 function upsertWatchLogEntry(entry) {
   const entries = loadWatchLog();
   const index = entries.findIndex((item) => item.id === entry.id);
+  const fallbackManualOrder = Math.min(
+    0,
+    ...entries.map((item) => Number.isFinite(item.manualOrder) ? item.manualOrder : 1),
+  ) - 1;
   const next = {
     ...entry,
+    manualOrder: Number.isFinite(entry.manualOrder)
+      ? entry.manualOrder
+      : (index >= 0 && Number.isFinite(entries[index]?.manualOrder) ? entries[index].manualOrder : fallbackManualOrder),
     updatedAt: new Date().toISOString(),
   };
   if (index >= 0) entries[index] = next;
@@ -1473,6 +1535,270 @@ function upsertWatchLogEntry(entry) {
 function deleteWatchLogEntry(id) {
   const next = loadWatchLog().filter((entry) => entry.id !== id);
   saveWatchLog(next);
+}
+
+function normDiaryTitle(title) {
+  return (title || '').toLowerCase().trim();
+}
+
+function isDiaryPlacementEligibleMovie(movie) {
+  if (!movie) return false;
+  if (movie.media_type === 'tv' || movie.media_type === 'tv_episode') return false;
+  const title = movie.title || '';
+  if (!title.trim()) return false;
+  const n = normDiaryTitle(title);
+  const inCollection = movies.some((item) => normDiaryTitle(item.title) === n);
+  const inWatchlist = loadWatchlist().some((item) => normDiaryTitle(item.title) === n);
+  const inMaybe = loadMaybe().some((item) => normDiaryTitle(item.title) === n);
+  const inMeh = loadMeh().some((item) => normDiaryTitle(item.title) === n);
+  const inBanned = loadBanned().some((item) => normDiaryTitle(item.title) === n);
+  return !inCollection && !inMaybe && !inMeh && !inBanned && (!inWatchlist || true);
+}
+
+function getDiaryPlacementPromptMode(movie) {
+  if (!movie || movie.media_type === 'tv' || movie.media_type === 'tv_episode') return null;
+  const title = movie.title || '';
+  if (!title.trim()) return null;
+  const n = normDiaryTitle(title);
+  const inCollection = movies.some((item) => normDiaryTitle(item.title) === n);
+  const inWatchlist = loadWatchlist().some((item) => normDiaryTitle(item.title) === n);
+  const inMaybe = loadMaybe().some((item) => normDiaryTitle(item.title) === n);
+  const inMeh = loadMeh().some((item) => normDiaryTitle(item.title) === n);
+  const inBanned = loadBanned().some((item) => normDiaryTitle(item.title) === n);
+  if (inCollection || inMaybe || inMeh || inBanned) return null;
+  return {
+    title,
+    year: movie.year || null,
+    poster: movie.poster || null,
+    tmdbId: movie.tmdb_id || movie.tmdbId || null,
+    watchlistOnly: inWatchlist,
+  };
+}
+
+function ensureDiaryPlacementPrompt() {
+  if (diary.placementPrompt) return diary.placementPrompt;
+  const prompt = document.createElement('div');
+  prompt.id = 'diary-placement-prompt';
+  prompt.className = 'diary-placement-prompt';
+  prompt.hidden = true;
+  Object.assign(prompt.style, {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    margin: '0 0 18px 26px',
+    padding: '14px 16px',
+    borderRadius: '16px',
+    border: '1px solid rgba(24,21,17,0.08)',
+    background: 'rgba(255,255,255,0.74)',
+    boxShadow: '0 10px 24px rgba(17,17,17,0.05)',
+    color: '#181511',
+  });
+
+  const msg = document.createElement('div');
+  msg.className = 'diary-placement-msg';
+  Object.assign(msg.style, {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  });
+
+  const title = document.createElement('strong');
+  title.id = 'diary-placement-title';
+  Object.assign(title.style, {
+    fontFamily: `'Playfair Display', Georgia, serif`,
+    fontSize: '15px',
+    lineHeight: '1.25',
+    fontWeight: '700',
+  });
+
+  const submsg = document.createElement('span');
+  submsg.id = 'diary-placement-submsg';
+  Object.assign(submsg.style, {
+    fontFamily: `'Inter', sans-serif`,
+    fontSize: '12px',
+    color: 'rgba(24,21,17,0.58)',
+  });
+
+  msg.appendChild(title);
+  msg.appendChild(submsg);
+
+  const actions = document.createElement('div');
+  actions.className = 'diary-placement-actions';
+  Object.assign(actions.style, {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    alignItems: 'center',
+  });
+
+  const makeBtn = (label, place, isPrimary = false) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = place ? 'diary-placement-btn' : 'diary-placement-dismiss';
+    btn.dataset.place = place || '';
+    btn.textContent = label;
+    Object.assign(btn.style, {
+      border: '1px solid rgba(181,137,42,0.24)',
+      background: isPrimary ? 'rgba(181,137,42,0.12)' : 'rgba(255,252,244,0.84)',
+      color: isPrimary ? '#6d5212' : '#181511',
+      borderRadius: '999px',
+      padding: '8px 12px',
+      fontFamily: `'Oswald', sans-serif`,
+      fontSize: '11px',
+      fontWeight: '700',
+      letterSpacing: '0.12em',
+      textTransform: 'uppercase',
+      cursor: 'pointer',
+      boxShadow: '0 6px 16px rgba(17,17,17,0.04)',
+    });
+    return btn;
+  };
+
+  const collectionBtn = makeBtn('+ Collection', 'collection', true);
+  const mehBtn = makeBtn('Meh', 'meh');
+  const bannedBtn = makeBtn("Don't Rec", 'banned');
+  const skipBtn = makeBtn('Skip', '');
+  skipBtn.style.borderColor = 'rgba(24,21,17,0.10)';
+  skipBtn.style.background = 'rgba(255,255,255,0.68)';
+  skipBtn.style.color = 'rgba(24,21,17,0.58)';
+
+  actions.appendChild(collectionBtn);
+  actions.appendChild(mehBtn);
+  actions.appendChild(bannedBtn);
+  actions.appendChild(skipBtn);
+
+  prompt.appendChild(msg);
+  prompt.appendChild(actions);
+
+  prompt.addEventListener('click', (event) => {
+    const target = event.target.closest('button');
+    if (!target) return;
+    event.preventDefault();
+    const place = target.dataset.place || '';
+    if (!place) {
+      hideDiaryPlacementPrompt();
+      return;
+    }
+    placeDiaryMovieInView(place);
+  });
+
+  diary.placementPrompt = prompt;
+  return prompt;
+}
+
+function hideDiaryPlacementPrompt() {
+  if (diary.placementPrompt) diary.placementPrompt.hidden = true;
+  diary.placementMovie = null;
+}
+
+function renderDiaryPlacementPrompt() {
+  const prompt = ensureDiaryPlacementPrompt();
+  const movie = diary.placementMovie;
+  if (!prompt || !movie) {
+    hideDiaryPlacementPrompt();
+    return;
+  }
+  const titleEl = prompt.querySelector('#diary-placement-title');
+  const submsgEl = prompt.querySelector('#diary-placement-submsg');
+  if (titleEl) titleEl.textContent = movie.title || 'Untitled';
+  if (submsgEl) {
+    submsgEl.textContent = movie.watchlistOnly
+      ? 'It is on your Watch Tonight list. Move it to:'
+      : 'Where should it go?';
+  }
+  const buttons = prompt.querySelectorAll('[data-place]');
+  buttons.forEach((btn) => {
+    const place = btn.dataset.place;
+    btn.textContent = place === 'collection' ? '+ Collection' : (place === 'banned' ? "Don't Rec" : 'Meh');
+  });
+  prompt.hidden = false;
+}
+
+function placeDiaryMovieInView(target) {
+  const movie = diary.placementMovie;
+  if (!movie || !target) return;
+  const title = normDiaryTitle(movie.title);
+  if (!title) return;
+
+  removeFromOtherLists(movie.title);
+
+  const entry = {
+    title: movie.title,
+    year: movie.year || null,
+    poster: movie.poster || null,
+    addedAt: Date.now(),
+  };
+
+  const list = getViewList(target).slice();
+  if (!list.some((item) => normDiaryTitle(item.title) === title)) {
+    list.unshift(entry);
+  }
+  saveViewList(target, list);
+  ['collection', 'watchlist', 'maybe', 'meh', 'banned'].forEach(markDirty);
+  invalidateTabCounts();
+  setGridView(gridView, { pushUrl: false });
+  renderGridNav();
+  hideDiaryPlacementPrompt();
+}
+
+function showDiaryPlacementPrompt(movie) {
+  const candidate = getDiaryPlacementPromptMode(movie);
+  if (!candidate) return false;
+  diary.placementMovie = candidate;
+  const prompt = ensureDiaryPlacementPrompt();
+  renderDiaryPlacementPrompt();
+
+  const composerParent = diary.composer?.parentElement;
+  if (composerParent) {
+    composerParent.insertBefore(prompt, diary.composer.nextSibling);
+  } else if (diary.logPanel) {
+    diary.logPanel.appendChild(prompt);
+  }
+  return true;
+}
+
+async function updateWatchLogSortable() {
+  await _sortableReady;
+  const list = diary.entries;
+  if (!list) return;
+  if (watchLogSortableInstance) {
+    watchLogSortableInstance.destroy();
+    watchLogSortableInstance = null;
+  }
+  if (!list.querySelector('.nww-diary-entry, .nww-diary-day-divider--manual')) return;
+
+  watchLogSortableInstance = Sortable.create(list, {
+    animation: 320,
+    easing: 'cubic-bezier(0.23, 1, 0.32, 1)',
+    draggable: '.nww-diary-entry:not(.is-editing), .nww-diary-day-divider--manual',
+    ghostClass: 'sortable-ghost',
+    filter: 'button, input, textarea, select, option',
+    preventOnFilter: false,
+    onEnd: () => {
+      const order = Array.from(list.querySelectorAll('.nww-diary-entry, .nww-diary-day-divider, .nww-diary-day-gap')).map((item) => ({
+        id: item.dataset.watchLogId || '',
+        dayKey: item.dataset.dayKey || '',
+      }));
+      const entries = loadWatchLog();
+      const byId = new Map(entries.map((entry) => [entry.id, entry]));
+      const reordered = [];
+      let currentDayKey = '';
+      let index = 0;
+      order.forEach((item) => {
+        if (item.dayKey) currentDayKey = item.dayKey;
+        if (!item.id) return;
+        const entry = byId.get(item.id);
+        if (!entry) return;
+        const next = { ...entry, manualOrder: index++ };
+        if (entry.type !== 'date_marker' && currentDayKey && getDiaryDayKey(next.watchedAt || next.startedAt) !== currentDayKey) {
+          next.watchedAt = diaryDayKeyToIso(currentDayKey, next.watchedAt || next.startedAt);
+          if (next.startedAt) next.startedAt = diaryDayKeyToIso(currentDayKey, next.startedAt);
+        }
+        reordered.push(next);
+      });
+      if (reordered.length) saveWatchLog(reordered);
+    },
+  });
 }
 
 function getActiveDiaryEntry(data) {
@@ -1594,14 +1920,14 @@ function updateWatchDiaryToolbar() {
 
   toolbar.hidden = !show;
   button.hidden = !show;
-  button.disabled = diary.reenrichInFlight;
+  button.disabled = diary.reenrichInFlight || !isAiEnabled();
   button.textContent = diary.reenrichInFlight
     ? 'Re-enriching signals…'
     : `Re-enrich signals (${count})`;
 }
 
 async function reenrichMissingTasteSignals() {
-  if (diary.reenrichInFlight) return;
+  if (!isAiEnabled() || diary.reenrichInFlight) return;
 
   const signals = loadTasteSignals();
   const eligible = getReenrichableTasteSignals(signals);
@@ -1659,6 +1985,15 @@ function formatDiaryGroupDate(value) {
   });
 }
 
+function diaryDayKeyToIso(dayKey, originalValue = '') {
+  if (!dayKey) return originalValue || new Date().toISOString();
+  const original = originalValue ? new Date(originalValue) : null;
+  const hours = original && !Number.isNaN(original.getTime()) ? original.getHours() : 12;
+  const minutes = original && !Number.isNaN(original.getTime()) ? original.getMinutes() : 0;
+  const seconds = original && !Number.isNaN(original.getTime()) ? original.getSeconds() : 0;
+  return new Date(`${dayKey}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`).toISOString();
+}
+
 function formatSignalDecision(decision) {
   return ({
     collection: 'Added to Collection',
@@ -1699,6 +2034,99 @@ function formatDiaryEpisodeSpan(seasonNumber, fromEpisodeNumber, toEpisodeNumber
     return formatDiaryEpisodeCode(seasonNumber, fromEpisodeNumber);
   }
   return `S${String(seasonNumber).padStart(2, '0')}E${String(fromEpisodeNumber).padStart(2, '0')}–E${String(toEpisodeNumber).padStart(2, '0')}`;
+}
+
+function openWatchLogEntryModal(entry) {
+  if (!entry) return;
+  const title = entry.mediaType === 'tv_episode'
+    ? (entry.seriesTitle || entry.title || 'Untitled')
+    : (entry.title || 'Untitled');
+  openMovieModalByTitle(title, entry.year || null, { pushUrl: false });
+}
+
+function normalizeDiaryFilmTitle(title) {
+  return (title || '').toLowerCase().trim();
+}
+
+function hideDiaryPlacementPrompt() {
+  diary.promptMovie = null;
+  if (diary.placementPrompt) diary.placementPrompt.hidden = true;
+}
+
+function showDiaryPlacementPrompt(movie) {
+  const prompt = diary.placementPrompt;
+  if (!prompt) return;
+
+  const mediaType = movie?.mediaType || movie?.media_type || null;
+  if (!movie || mediaType === 'tv' || mediaType === 'tv_episode') {
+    hideDiaryPlacementPrompt();
+    return;
+  }
+
+  const title = (movie.title || '').trim();
+  if (!title) {
+    hideDiaryPlacementPrompt();
+    return;
+  }
+
+  const normTitle = normalizeDiaryFilmTitle(title);
+  const inCollection = movies.some((m) => normalizeDiaryFilmTitle(m.title) === normTitle);
+  const inMeh = loadMeh().some((m) => normalizeDiaryFilmTitle(m.title) === normTitle);
+  const inMaybe = loadMaybe().some((m) => normalizeDiaryFilmTitle(m.title) === normTitle);
+  const inBanned = loadBanned().some((m) => normalizeDiaryFilmTitle(m.title) === normTitle);
+  const inWatchlist = loadWatchlist().some((m) => normalizeDiaryFilmTitle(m.title) === normTitle);
+
+  if (inCollection || inMeh || inMaybe || inBanned) {
+    hideDiaryPlacementPrompt();
+    return;
+  }
+
+  diary.promptMovie = {
+    title,
+    year: movie.year || null,
+    poster: movie.poster || null,
+  };
+
+  if (diary.placementTitle) diary.placementTitle.textContent = title;
+  if (diary.placementSubmsg) {
+    diary.placementSubmsg.textContent = inWatchlist
+      ? "It's on your Watch Tonight list. Move it to:"
+      : 'Where should it go?';
+  }
+  prompt.hidden = false;
+}
+
+function placeDiaryPromptMovie(target) {
+  if (!diary.promptMovie || !target) return;
+
+  const entry = {
+    title: diary.promptMovie.title,
+    year: diary.promptMovie.year || null,
+    poster: diary.promptMovie.poster || null,
+    addedAt: Date.now(),
+  };
+
+  removeFromOtherLists(entry.title);
+  if (target === 'collection') {
+    movies.unshift(entry);
+    saveMovies();
+  } else if (target === 'meh') {
+    const list = loadMeh();
+    list.unshift(entry);
+    saveMeh(list);
+  } else if (target === 'banned') {
+    const list = loadBanned();
+    list.unshift(entry);
+    saveBanned(list);
+  } else {
+    return;
+  }
+
+  invalidateTabCounts();
+  renderGridNav();
+  markDirty(gridView);
+  setGridView(gridView);
+  hideDiaryPlacementPrompt();
 }
 
 function resetDiarySeriesFields() {
@@ -1833,8 +2261,14 @@ function setDiaryTimestampFieldVisibility() {
 function setWatchDiaryComposerOpen(open) {
   diary.composerOpen = open;
   if (diary.composer) diary.composer.hidden = !open;
-  diary.composerToggle?.setAttribute('aria-expanded', open ? 'true' : 'false');
-  if (diary.composerToggle) diary.composerToggle.textContent = open ? 'Close record' : 'Add a record';
+  if (diary.entries) {
+    renderWatchDiary();
+  }
+}
+
+function setWatchDiaryAddDateOpen(open) {
+  if (diary.addDateInline) diary.addDateInline.hidden = !open;
+  if (diary.addDateBtn) diary.addDateBtn.textContent = open ? 'Close date' : 'Add date';
 }
 
 function resetWatchDiaryForm() {
@@ -1843,11 +2277,13 @@ function resetWatchDiaryForm() {
   if (diary.watchedAtInput) diary.watchedAtInput.value = formatDiaryDateInput(new Date().toISOString());
   if (diary.statusInput) diary.statusInput.value = 'finished';
   if (diary.submit) diary.submit.textContent = 'Save entry';
+  diary.editingEntryId = null;
   diary.selectedResult = null;
   resetDiarySeriesFields();
   closeDiarySearchResults();
   setDiaryTimestampFieldVisibility();
   setWatchDiaryComposerOpen(false);
+  setWatchDiaryAddDateOpen(false);
 }
 
 function populateWatchDiaryFormFromSession(data) {
@@ -1871,33 +2307,180 @@ function populateWatchDiaryFormFromSession(data) {
   setWatchDiaryComposerOpen(true);
 }
 
+async function populateWatchDiaryFormFromEntry(entry) {
+  if (!diary.form || !entry) return;
+  diary.editingEntryId = entry.id;
+  const isTv = entry.mediaType === 'tv' || entry.mediaType === 'tv_episode';
+  const seriesTitle = entry.seriesTitle || entry.title || '';
+  diary.titleInput.value = isTv ? seriesTitle : (entry.title || '');
+  diary.watchedAtInput.value = formatDiaryDateInput(entry.watchedAt || entry.startedAt || new Date().toISOString());
+  diary.statusInput.value = entry.status || 'finished';
+  diary.timestampInput.value = entry.status === 'timestamp' ? formatDiaryTimestamp(entry.timestampMs) : '';
+  diary.noteInput.value = entry.note || '';
+  diary.rewatchInput.checked = !!entry.rewatch;
+  if (diary.submit) diary.submit.textContent = 'Save changes';
+  closeDiarySearchResults();
+
+  if (isTv) {
+    diary.selectedResult = {
+      title: seriesTitle,
+      year: entry.year || null,
+      poster: entry.poster || null,
+      media_type: 'tv',
+      tmdb_id: entry.tmdbId || null,
+    };
+    if (diary.singleEpisodeInput) diary.singleEpisodeInput.checked = !!entry.singleEpisode || entry.mediaType === 'tv_episode';
+    if (entry.tmdbId && entry.seasonNumber) {
+      await loadDiaryTvSeasons(
+        diary.selectedResult,
+        entry.seasonNumber,
+        entry.episodeStartNumber || entry.episodeNumber,
+        entry.episodeEndNumber || entry.episodeStartNumber || entry.episodeNumber,
+      );
+    } else {
+      setDiarySeriesFieldsVisibility(true);
+      setDiaryEpisodeRangeVisibility();
+    }
+  } else {
+    diary.selectedResult = {
+      title: entry.title || '',
+      year: entry.year || null,
+      poster: entry.poster || null,
+      media_type: 'movie',
+      tmdb_id: entry.tmdbId || null,
+    };
+    resetDiarySeriesFields();
+  }
+
+  setDiaryTimestampFieldVisibility();
+  setWatchDiaryComposerOpen(true);
+}
+
+function renderWatchLogEntryEditor(item, entry) {
+  item.classList.add('is-editing');
+  const status = entry.status || 'finished';
+  const watchedAt = formatDiaryDateInput(entry.watchedAt || entry.startedAt || new Date().toISOString());
+  const timestamp = status === 'timestamp' ? formatDiaryTimestamp(entry.timestampMs) : '';
+  const main = item.querySelector('.nww-diary-entry-main');
+  const actions = item.querySelector('.nww-diary-entry-actions');
+  if (!main || !actions) return;
+
+  main.innerHTML = `
+    <div class="nww-diary-entry-meta">
+      <div class="nww-diary-entry-film">${entry.mediaType === 'tv_episode' ? `${entry.seriesTitle || entry.title || 'Untitled'}${entry.episodeTitle ? ` — ${entry.episodeTitle}` : ''}` : (entry.title || 'Untitled')}</div>
+      <div class="nww-diary-entry-time">${formatDiaryDate(entry.watchedAt || entry.startedAt)}</div>
+    </div>
+    <div class="nww-diary-inline-editor">
+      <label class="nww-diary-inline-field">
+        <span class="nww-diary-label">Watched</span>
+        <input class="nww-diary-input" type="date" data-watch-log-edit-watched value="${watchedAt}">
+      </label>
+      <label class="nww-diary-inline-field">
+        <span class="nww-diary-label">Status</span>
+        <select class="nww-diary-input" data-watch-log-edit-status>
+          <option value="finished"${status === 'finished' ? ' selected' : ''}>Finished</option>
+          <option value="abandoned"${status === 'abandoned' ? ' selected' : ''}>Abandoned</option>
+          <option value="timestamp"${status === 'timestamp' ? ' selected' : ''}>Timestamp</option>
+        </select>
+      </label>
+      <label class="nww-diary-inline-field${status === 'finished' ? ' is-hidden' : ''}" data-watch-log-edit-timestamp-wrap>
+        <span class="nww-diary-label">Stop point</span>
+        <input class="nww-diary-input" type="text" data-watch-log-edit-timestamp placeholder="01:14:32" value="${timestamp}">
+      </label>
+      <label class="nww-diary-inline-field nww-diary-inline-field-note">
+        <span class="nww-diary-label">Note</span>
+        <textarea class="nww-diary-textarea" rows="3" data-watch-log-edit-note placeholder="Short reflection, one line, or a few notes...">${entry.note || ''}</textarea>
+      </label>
+      <label class="nww-diary-inline-check">
+        <input type="checkbox" data-watch-log-edit-rewatch${entry.rewatch ? ' checked' : ''}>
+        <span>Rewatch</span>
+      </label>
+    </div>
+  `;
+
+  actions.innerHTML = `
+    <button class="nww-diary-entry-save" type="button" data-watch-log-save="${entry.id}">Save</button>
+    <button class="nww-diary-entry-cancel" type="button" data-watch-log-cancel="${entry.id}">Cancel</button>
+    <button class="nww-diary-entry-delete" type="button" data-watch-log-delete="${entry.id}">Delete</button>
+  `;
+}
+
 function renderWatchDiary() {
   const list = diary.entries;
   if (!list) return;
 
   const entries = sortWatchLog(loadWatchLog());
+  const footer = diary.addDateBtn?.closest('.nww-diary-timeline-footer') || null;
+  const composer = diary.composer || null;
+  const todayKey = getDiaryDayKey(new Date().toISOString());
+  const hasTodaySection = entries.some((entry) => getDiaryDayKey(entry.watchedAt || entry.startedAt) === todayKey);
+  list.innerHTML = '';
   if (!entries.length) {
     list.innerHTML = `
       <div class="nww-diary-empty">
         <div class="nww-diary-empty-title">No diary entries yet.</div>
         <div class="nww-diary-empty-copy">Use the form above or start a session with Watch Now to add your first entry.</div>
       </div>`;
-    return;
   }
-
-  list.innerHTML = '';
   const template = diary.entryTemplate;
   let lastDayKey = '';
+  let pendingManualDayKey = '';
+  let pendingManualHasEntries = false;
+  const appendManualGap = (dayKey) => {
+    if (!dayKey) return;
+    const gap = document.createElement('button');
+    gap.type = 'button';
+    gap.className = 'nww-diary-day-gap';
+    gap.dataset.dayKey = dayKey;
+    gap.innerHTML = '<span>Add a record</span>';
+    list.appendChild(gap);
+  };
+
+  const todayAdd = document.createElement('button');
+  todayAdd.type = 'button';
+  todayAdd.className = 'nww-diary-today-add';
+  todayAdd.dataset.dayKey = todayKey;
+  todayAdd.innerHTML = '<span>Add a record</span>';
+  let insertedTodayAdd = false;
+  const appendTodayAdd = () => {
+    if (insertedTodayAdd) return;
+    list.appendChild(todayAdd);
+    if (composer) list.appendChild(composer);
+    insertedTodayAdd = true;
+  };
+
+  if (!hasTodaySection) appendTodayAdd();
+
   entries.forEach((entry) => {
     const dayValue = entry.watchedAt || entry.startedAt;
     const dayKey = getDiaryDayKey(dayValue);
-    if (dayKey && dayKey !== lastDayKey) {
+    if (entry.type === 'date_marker') {
+      if (pendingManualDayKey && !pendingManualHasEntries) appendManualGap(pendingManualDayKey);
       const divider = document.createElement('div');
-      divider.className = 'nww-diary-day-divider';
+      divider.className = 'nww-diary-day-divider nww-diary-day-divider--manual';
+      divider.dataset.watchLogId = entry.id;
+      divider.dataset.dayKey = dayKey;
       divider.innerHTML = `<span>${formatDiaryGroupDate(dayValue)}</span>`;
       list.appendChild(divider);
+      if (dayKey === todayKey) appendTodayAdd();
+      pendingManualDayKey = dayKey;
+      pendingManualHasEntries = false;
+      lastDayKey = dayKey;
+      return;
+    }
+    if (dayKey && dayKey !== lastDayKey) {
+      if (pendingManualDayKey && !pendingManualHasEntries) appendManualGap(pendingManualDayKey);
+      const divider = document.createElement('div');
+      divider.className = 'nww-diary-day-divider';
+      divider.dataset.dayKey = dayKey;
+      divider.innerHTML = `<span>${formatDiaryGroupDate(dayValue)}</span>`;
+      list.appendChild(divider);
+      if (dayKey === todayKey) appendTodayAdd();
+      pendingManualDayKey = '';
+      pendingManualHasEntries = false;
       lastDayKey = dayKey;
     }
+    if (pendingManualDayKey && dayKey === pendingManualDayKey) pendingManualHasEntries = true;
     const item = template
       ? template.content.firstElementChild.cloneNode(true)
       : document.createElement('article');
@@ -1930,10 +2513,26 @@ function renderWatchDiary() {
           entry.year,
           entry.director,
         ].filter(Boolean).join(' · ');
-    item.querySelector('.nww-diary-entry-note').textContent = note || 'No note yet.';
-    item.querySelector('.nww-diary-entry-delete')?.setAttribute('data-watch-log-delete', entry.id);
+    if (diary.editingEntryId === entry.id) {
+      renderWatchLogEntryEditor(item, entry);
+    } else {
+      item.querySelector('.nww-diary-entry-note').textContent = note || 'No note yet.';
+      item.querySelector('.nww-diary-entry-edit')?.setAttribute('data-watch-log-edit', entry.id);
+      item.querySelector('.nww-diary-entry-delete')?.setAttribute('data-watch-log-delete', entry.id);
+    }
     list.appendChild(item);
   });
+  if (pendingManualDayKey && !pendingManualHasEntries) appendManualGap(pendingManualDayKey);
+  if (footer) list.appendChild(footer);
+  updateWatchLogSortable();
+}
+
+function findPosterByTitle(title) {
+  if (!title) return null;
+  const norm = t => (t || '').toLowerCase().trim();
+  const n = norm(title);
+  const all = [...movies, ...loadWatchlist(), ...loadMaybe(), ...loadMeh(), ...loadBanned(), ...loadAnticipated()];
+  return all.find(m => norm(m.title) === n)?.poster || null;
 }
 
 function renderSessionJournal() {
@@ -1956,7 +2555,8 @@ function renderSessionJournal() {
     const entry = document.createElement('details');
     entry.className = 'watch-journal-entry';
     entry.dataset.signalTimestamp = String(signal.timestamp);
-    const poster = signal.poster ? `<img src="${signal.poster}" alt="">` : '';
+    const posterUrl = signal.poster || findPosterByTitle(signal.title);
+    const poster = posterUrl ? `<img src="${posterUrl}" alt="">` : '';
     const factsCount = Array.isArray(signal.facts) ? signal.facts.length : 0;
     const chatTurns = signal.chat_turns || 0;
     const noCompanion = chatTurns === 0 && factsCount === 0;
@@ -2041,6 +2641,7 @@ function setWatchDiaryOpen(open) {
   diary.layout?.classList.toggle('watch-diary-open', open);
   diary.panel?.setAttribute('aria-hidden', open ? 'false' : 'true');
   diary.toggleBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  requestAnimationFrame(updateWatchDiaryShellMetrics);
 }
 
 function closeWatchDiaryDeleteConfirm() {
@@ -2217,6 +2818,7 @@ let gridView = 'collection'; // 'collection' | 'watchlist' | 'maybe' | 'banned' 
 let sortableInstance;
 let sortableView = null;
 let currentSaveOrder = null;
+let watchLogSortableInstance = null;
 
 const SORT_KEY = 'thecollection_sort';
 let _sortModesCache = null;
@@ -3079,6 +3681,38 @@ diary.tabJournal?.addEventListener('click', () => {
 diary.composerToggle?.addEventListener('click', () => {
   setWatchDiaryComposerOpen(!diary.composerOpen);
   if (diary.composerOpen) diary.titleInput?.focus();
+});
+
+diary.cancel?.addEventListener('click', () => {
+  resetWatchDiaryForm();
+});
+
+diary.addDateBtn?.addEventListener('click', () => {
+  const open = diary.addDateInline?.hidden !== false;
+  setWatchDiaryAddDateOpen(open);
+  if (open) {
+    if (diary.addDateInput && !diary.addDateInput.value) {
+      diary.addDateInput.value = formatDiaryDateInput(new Date().toISOString());
+    }
+    diary.addDateInput?.focus();
+  }
+});
+
+diary.addDateConfirm?.addEventListener('click', () => {
+  const value = diary.addDateInput?.value;
+  if (!value) {
+    diary.addDateInput?.focus();
+    return;
+  }
+  upsertWatchLogEntry({
+    id: createWatchLogId(),
+    type: 'date_marker',
+    watchedAt: new Date(value).toISOString(),
+    startedAt: new Date(value).toISOString(),
+    source: 'manual',
+  });
+  setWatchDiaryAddDateOpen(false);
+  if (diary.addDateInput) diary.addDateInput.value = '';
 });
 
 diary.reenrichBtn?.addEventListener('click', () => {
@@ -4650,7 +5284,16 @@ diary.form?.addEventListener('submit', (e) => {
     return;
   }
 
-  upsertWatchLogEntry({
+  const savedMovie = selected?.media_type === 'tv'
+    ? null
+    : {
+        title,
+        year: selected?.year || null,
+        poster: selected?.poster || null,
+        media_type: 'movie',
+      };
+
+  const savedEntry = upsertWatchLogEntry({
     id: createWatchLogId(),
     title: selected?.media_type === 'tv' && singleEpisode ? (episodeTitle || title) : title,
     seriesTitle: selected?.media_type === 'tv' ? title : null,
@@ -4675,14 +5318,118 @@ diary.form?.addEventListener('submit', (e) => {
     source: 'manual',
   });
   resetWatchDiaryForm();
+  showDiaryPlacementPrompt(savedEntry || savedMovie);
 });
 
 diary.entries?.addEventListener('click', (e) => {
+  const todayAdd = e.target.closest('.nww-diary-today-add');
+  if (todayAdd) {
+    const dayKey = todayAdd.dataset.dayKey || getDiaryDayKey(new Date().toISOString());
+    setWatchDiaryComposerOpen(true);
+    if (diary.watchedAtInput) diary.watchedAtInput.value = dayKey;
+    diary.titleInput?.focus();
+    return;
+  }
+  const editBtn = e.target.closest('[data-watch-log-edit]');
+  if (editBtn) {
+    const id = editBtn.getAttribute('data-watch-log-edit');
+    if (id) {
+      diary.editingEntryId = id;
+      setWatchDiaryComposerOpen(false);
+      renderWatchDiary();
+    }
+    return;
+  }
+
+  const cancelBtn = e.target.closest('[data-watch-log-cancel]');
+  if (cancelBtn) {
+    diary.editingEntryId = null;
+    renderWatchDiary();
+    return;
+  }
+
+  const saveBtn = e.target.closest('[data-watch-log-save]');
+  if (saveBtn) {
+    const id = saveBtn.getAttribute('data-watch-log-save');
+    const card = saveBtn.closest('.nww-diary-entry');
+    const entry = id ? loadWatchLog().find((item) => item.id === id) : null;
+    if (!card || !entry) return;
+
+    const watchedAtRaw = card.querySelector('[data-watch-log-edit-watched]')?.value || '';
+    const status = card.querySelector('[data-watch-log-edit-status]')?.value || 'finished';
+    const note = card.querySelector('[data-watch-log-edit-note]')?.value.trim() || '';
+    const rewatch = !!card.querySelector('[data-watch-log-edit-rewatch]')?.checked;
+    const timestampRaw = card.querySelector('[data-watch-log-edit-timestamp]')?.value || '';
+    const timestampMs = status === 'timestamp' ? parseDiaryTimestampInput(timestampRaw) : null;
+
+    if (!watchedAtRaw) {
+      card.querySelector('[data-watch-log-edit-watched]')?.focus();
+      return;
+    }
+    if (status === 'timestamp' && timestampMs === null) {
+      card.querySelector('[data-watch-log-edit-timestamp]')?.focus();
+      return;
+    }
+
+    upsertWatchLogEntry({
+      ...entry,
+      watchedAt: new Date(watchedAtRaw).toISOString(),
+      status,
+      timestampMs,
+      note,
+      rewatch,
+    });
+    diary.editingEntryId = null;
+    renderWatchDiary();
+    return;
+  }
   const deleteBtn = e.target.closest('[data-watch-log-delete]');
-  if (!deleteBtn) return;
-  const id = deleteBtn.getAttribute('data-watch-log-delete');
+  if (deleteBtn) {
+    const id = deleteBtn.getAttribute('data-watch-log-delete');
+    if (!id) return;
+    openWatchDiaryDeleteConfirm(id);
+    return;
+  }
+
+  if (e.target.closest('button, input, textarea, select, label, a')) return;
+  const card = e.target.closest('.nww-diary-entry');
+  if (!card || card.classList.contains('is-editing')) return;
+  const id = card.dataset.watchLogId;
   if (!id) return;
-  openWatchDiaryDeleteConfirm(id);
+  const entry = loadWatchLog().find((item) => item.id === id);
+  if (!entry) return;
+  openWatchLogEntryModal(entry);
+});
+
+diary.entries?.addEventListener('change', (e) => {
+  const statusInput = e.target.closest('[data-watch-log-edit-status]');
+  if (!statusInput) return;
+  const card = statusInput.closest('.nww-diary-entry');
+  const timestampWrap = card?.querySelector('[data-watch-log-edit-timestamp-wrap]');
+  const timestampInput = card?.querySelector('[data-watch-log-edit-timestamp]');
+  const showTimestamp = statusInput.value !== 'finished';
+  timestampWrap?.classList.toggle('is-hidden', !showTimestamp);
+  if (!showTimestamp && timestampInput) timestampInput.value = '';
+});
+
+diary.entries?.addEventListener('click', (e) => {
+  const gap = e.target.closest('.nww-diary-day-gap');
+  if (!gap) return;
+  const dayKey = gap.dataset.dayKey;
+  setWatchDiaryComposerOpen(true);
+  if (diary.watchedAtInput && dayKey) diary.watchedAtInput.value = dayKey;
+  diary.titleInput?.focus();
+});
+
+diary.placementPrompt?.addEventListener('click', (e) => {
+  const action = e.target.closest('.diary-placement-btn');
+  if (action) {
+    placeDiaryPromptMovie(action.dataset.place);
+    return;
+  }
+  if (e.target.closest('#diary-placement-dismiss')) {
+    hideDiaryPlacementPrompt();
+  }
 });
 
 diary.journalList?.addEventListener('click', (e) => {
@@ -4719,6 +5466,13 @@ diary.confirmDelete?.addEventListener('click', () => {
   }
   closeWatchDiaryDeleteConfirm();
 });
+
+if (diary.shellHead && 'ResizeObserver' in window) {
+  const diaryHeadObserver = new ResizeObserver(() => updateWatchDiaryShellMetrics());
+  diaryHeadObserver.observe(diary.shellHead);
+}
+window.addEventListener('resize', updateWatchDiaryShellMetrics);
+requestAnimationFrame(updateWatchDiaryShellMetrics);
 
 document.addEventListener('click', (e) => {
   if (!diary.searchResults || !diary.titleInput) return;

@@ -11,3 +11,4 @@ persona-images/
 .codex/
 images/generated-*
 *.pen
+_private/

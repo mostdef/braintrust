@@ -1,17 +1,20 @@
 const getAuthenticatedUser = require('./_auth');
 const supabaseAdmin        = require('./_supabase');
 
-const FIELDS = ['movies', 'watchlist', 'maybe', 'meh', 'banned', 'standards', 'watch_log', 'total_cost'];
+const FIELDS = ['movies', 'watchlist', 'maybe', 'meh', 'banned', 'standards', 'watch_log', 'total_cost', 'ai_enabled', 'spend_month', 'spend_cap'];
 
 const DEFAULTS = {
-  movies:     [],
-  watchlist:  [],
-  maybe:      [],
-  meh:        [],
-  banned:     [],
-  standards:  [],
-  watch_log:  [],
-  total_cost: 0,
+  movies:      [],
+  watchlist:   [],
+  maybe:       [],
+  meh:         [],
+  banned:      [],
+  standards:   [],
+  watch_log:   [],
+  total_cost:  0,
+  ai_enabled:  true,
+  spend_month: 0,
+  spend_cap:   3.00,
 };
 
 module.exports = async function handler(req, res) {
@@ -26,7 +29,7 @@ module.exports = async function handler(req, res) {
 
     const { data, error } = await supabaseAdmin
       .from('user_data')
-      .select('movies, watchlist, maybe, meh, banned, standards, watch_log, total_cost')
+      .select('movies, watchlist, maybe, meh, banned, standards, watch_log, total_cost, ai_enabled, spend_month, spend_cap')
       .eq('user_id', user.id)
       .maybeSingle();
 
@@ -61,6 +64,36 @@ module.exports = async function handler(req, res) {
 
     if (error) {
       console.error('[user-data PUT]', error);
+      return res.status(500).json({ error: 'Server error' });
+    }
+
+    return res.json({ ok: true });
+  }
+
+  // --- PATCH: update a single preference field (e.g. ai_enabled) ---
+  if (req.method === 'PATCH') {
+    let user;
+    try {
+      user = await getAuthenticatedUser(req);
+    } catch (e) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const PATCHABLE = ['ai_enabled'];
+    const body = req.body || {};
+    const row = { updated_at: new Date().toISOString() };
+    PATCHABLE.forEach(function (field) {
+      if (field in body) row[field] = body[field];
+    });
+    if (Object.keys(row).length === 1) return res.status(400).json({ error: 'no_fields' });
+
+    const { error } = await supabaseAdmin
+      .from('user_data')
+      .update(row)
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('[user-data PATCH]', error);
       return res.status(500).json({ error: 'Server error' });
     }
 

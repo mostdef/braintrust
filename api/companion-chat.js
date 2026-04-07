@@ -20,10 +20,13 @@ module.exports = async function handler(req, res) {
 
   let getAuthenticatedUser;
   try { getAuthenticatedUser = require('./_auth'); } catch {}
+  let user = null;
   if (getAuthenticatedUser) {
-    const user = await getAuthenticatedUser(req);
+    user = await getAuthenticatedUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
   }
+  const gate = await require('./_ai-gate')(user);
+  if (gate) return res.status(402).json(gate);
 
   const { action = 'chat' } = req.body;
 

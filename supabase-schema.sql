@@ -30,6 +30,13 @@ create table taste_profiles (
   updated_at    timestamptz not null default now()
 );
 
+-- AI gate + spend tracking columns (migration — safe to run on existing DB)
+alter table user_data
+  add column if not exists ai_enabled      boolean       not null default true,
+  add column if not exists spend_month     numeric(10,6) not null default 0,
+  add column if not exists spend_cap       numeric(10,6) not null default 3.0,
+  add column if not exists spend_month_key text          not null default '';
+
 -- Row Level Security
 alter table user_data enable row level security;
 alter table snapshots enable row level security;

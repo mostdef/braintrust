@@ -39,6 +39,7 @@
     </div>
 
     <aside class="watch-diary-panel" id="watch-diary-panel" aria-labelledby="watch-diary-title" aria-hidden="true">
+      <div class="watch-diary-shell-head" id="watch-diary-shell-head">
       <div class="nww-diary-header">
         <div class="nww-diary-header-copy">
           <div class="nww-diary-kicker">Watching Diary</div>
@@ -56,11 +57,9 @@
       <div class="watch-diary-toolbar" id="watch-diary-toolbar">
         <button class="watch-diary-toolbar-btn" id="watch-journal-reenrich-btn" type="button" hidden>Re-enrich signals</button>
       </div>
+      </div>
 
       <div class="watch-diary-panel-view is-active" id="watch-diary-log-panel" role="tabpanel" aria-labelledby="watch-diary-tab-log">
-      <div class="nww-diary-composer-header">
-        <button class="nww-diary-composer-toggle" id="nww-diary-composer-toggle" type="button" aria-expanded="false" aria-controls="nww-diary-composer">Add a record</button>
-      </div>
       <div class="nww-diary-composer" id="nww-diary-composer" hidden>
       <form class="nww-diary-form" id="nww-diary-form">
         <div class="nww-diary-form-grid">
@@ -120,20 +119,42 @@
             <input type="checkbox" id="nww-diary-rewatch-input" name="rewatch" />
             <span>Rewatch</span>
           </label>
-          <button class="nww-diary-submit" id="nww-diary-submit" type="submit">Save entry</button>
+          <div class="nww-diary-form-buttons">
+            <button class="nww-diary-cancel" id="nww-diary-cancel" type="button">Cancel</button>
+            <button class="nww-diary-submit" id="nww-diary-submit" type="submit">Save entry</button>
+          </div>
         </div>
       </form>
       </div>
 
+      <div class="diary-placement-prompt" id="diary-placement-prompt" hidden>
+        <div class="diary-placement-msg">
+          <strong id="diary-placement-title"></strong>
+          <span id="diary-placement-submsg"></span>
+        </div>
+        <div class="diary-placement-actions">
+          <button class="diary-placement-btn" data-place="collection" type="button">+ Collection</button>
+          <button class="diary-placement-btn" data-place="meh" type="button">Meh</button>
+          <button class="diary-placement-btn" data-place="banned" type="button">Don't Rec</button>
+          <button class="diary-placement-dismiss" id="diary-placement-dismiss" type="button">Skip</button>
+        </div>
+      </div>
+
       <div class="nww-diary-entries-header">
         <div class="nww-diary-entries-title">Timeline</div>
-        <div class="nww-diary-entries-subtitle">Newest first</div>
       </div>
 
       <div class="nww-diary-entries" id="nww-diary-entries" aria-live="polite">
         <div class="nww-diary-empty">
           <div class="nww-diary-empty-title">No diary entries yet.</div>
           <div class="nww-diary-empty-copy">Use the form above or start a session with Watch Now to add your first entry.</div>
+        </div>
+        <div class="nww-diary-timeline-footer">
+          <button class="nww-diary-add-date-btn" id="nww-diary-add-date-btn" type="button">Add date</button>
+          <div class="nww-diary-add-date-inline" id="nww-diary-add-date-inline" hidden>
+            <input class="nww-diary-input" id="nww-diary-add-date-input" type="date" />
+            <button class="nww-diary-add-date-confirm" id="nww-diary-add-date-confirm" type="button">Use date</button>
+          </div>
         </div>
       </div>
       </div>
@@ -147,11 +168,12 @@
               <div class="nww-diary-entry-time"></div>
             </div>
             <div class="nww-diary-entry-status"></div>
-            <div class="nww-diary-entry-note"></div>
           </div>
           <div class="nww-diary-entry-actions">
+            <button class="nww-diary-entry-edit" type="button">Edit</button>
             <button class="nww-diary-entry-delete" type="button">Delete</button>
           </div>
+          <div class="nww-diary-entry-note"></div>
         </article>
       </template>
 

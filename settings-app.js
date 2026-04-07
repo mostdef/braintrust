@@ -6,6 +6,7 @@ const MEH_KEY            = 'thecollection_meh';
 const BANNED_KEY         = 'thecollection_banned';
 const STANDARDS_KEY      = 'thecollection_standards';
 const WATCH_LOG_KEY      = 'thecollection_watch_log';
+const TASTE_SIGNALS_KEY  = 'thecollection_taste_signals';
 const TOTAL_COST_KEY     = 'thecollection_total_cost';
 const STARTING_BAL_KEY   = 'thecollection_starting_balance';
 
@@ -16,7 +17,8 @@ function applySnapshot(snap) {
   localStorage.setItem(MEH_KEY,       JSON.stringify(snap.meh       || []));
   localStorage.setItem(BANNED_KEY,    JSON.stringify(snap.banned    || []));
   if (snap.standards) localStorage.setItem(STANDARDS_KEY, JSON.stringify(snap.standards));
-  localStorage.setItem(WATCH_LOG_KEY, JSON.stringify(snap.watch_log || []));
+  localStorage.setItem(WATCH_LOG_KEY,      JSON.stringify(snap.watch_log     || []));
+  localStorage.setItem(TASTE_SIGNALS_KEY, JSON.stringify(snap.taste_signals || []));
   if (snap.totalCost != null) localStorage.setItem(TOTAL_COST_KEY, snap.totalCost.toFixed(6));
   // Push to Supabase immediately so hydration on next load doesn't overwrite
   supabasePushFromSettings();
