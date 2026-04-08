@@ -526,6 +526,7 @@ const ModalComponent = (() => {
       onAnticipate = null,
       onMeh = null,
       onBan = null,
+      hideWatchBtn = false,
     } = options;
 
     // In-memory session state — persists across tab switches for this modal's lifetime
@@ -588,7 +589,7 @@ const ModalComponent = (() => {
       banBtn.addEventListener('click', () => { if (typeof onBan === 'function') onBan(movie); });
 
       posterCol.append(anticipateBtn, mehBtn, banBtn);
-    } else {
+    } else if (!hideWatchBtn) {
       const watchBtn = document.createElement('button');
       watchBtn.className = 'mm-watch-btn';
       watchBtn.textContent = 'Watch Tonight';

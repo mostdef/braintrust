@@ -2041,7 +2041,8 @@ function openWatchLogEntryModal(entry) {
   const title = entry.mediaType === 'tv_episode'
     ? (entry.seriesTitle || entry.title || 'Untitled')
     : (entry.title || 'Untitled');
-  openMovieModalByTitle(title, entry.year || null, { pushUrl: false });
+  openMovieModalByTitle(title, entry.year || null, { pushUrl: false, tmdbId: entry.tmdbId || null, poster: entry.poster || null, fromDiary: true });
+  pushDiaryModalUrl({ title, year: entry.year || null }, diary.activeTab || 'log');
 }
 
 function normalizeDiaryFilmTitle(title) {
@@ -2300,6 +2301,7 @@ function populateWatchDiaryFormFromSession(data) {
     year: data.year || null,
     poster: data.poster || null,
     media_type: 'movie',
+    tmdb_id: data.tmdb_id || null,
   };
   resetDiarySeriesFields();
   closeDiarySearchResults();
@@ -2986,6 +2988,20 @@ const VIEW_SLUGS = {
 };
 const SLUG_TO_VIEW = Object.fromEntries(Object.entries(VIEW_SLUGS).map(([v, s]) => [s, v]));
 
+function pushDiaryModalUrl(movie, tab) {
+  const params = new URLSearchParams();
+  params.set('film', movie.title);
+  if (movie.year) params.set('year', String(movie.year));
+  if (tab && tab !== 'log') params.set('tab', tab);  // 'log' is default — omit
+  const url = `/movies.html#diary?${params}`;
+  if (location.href !== location.origin + url) history.pushState({ diary: true, film: movie.title, tab }, '', url);
+}
+
+function stripDiaryModalUrl() {
+  const url = '/movies.html#diary';
+  if (location.href !== location.origin + url) history.replaceState({ diary: true }, '', url);
+}
+
 function pushViewUrl(view) {
   const slug = VIEW_SLUGS[view] || view;
   const sort = getSortMode(view);
@@ -3016,11 +3032,13 @@ function stripModalUrl(view) {
 function readViewUrl() {
   const hash = location.hash.replace('#', '').split('?')[0];
   const params = new URLSearchParams(location.hash.includes('?') ? location.hash.split('?')[1] : '');
-  const view = SLUG_TO_VIEW[hash] || (VIEWS.includes(hash) ? hash : null);
+  const isDiary = hash === 'diary';
+  const view = isDiary ? null : (SLUG_TO_VIEW[hash] || (VIEWS.includes(hash) ? hash : null));
   const sort = params.get('sort');
   const filmTitle = params.get('film');
   const film = filmTitle ? { title: filmTitle, year: params.get('year') || null } : null;
-  return { view, sort, film };
+  const diaryTab = params.get('tab') || 'log';
+  return { view, sort, film, isDiary, diaryTab };
 }
 
 function setGridView(view, { pushUrl = true } = {}) {
@@ -3608,15 +3626,30 @@ let darkBoost    = _g.darkBoost    ?? 100;
 
 // ── URL routing ───────────────────────────────────────────────────────────────
 window.addEventListener('popstate', () => {
-  const { view, sort, film } = readViewUrl();
+  const { view, sort, film, isDiary, diaryTab } = readViewUrl();
   const modalOpen = document.getElementById('movie-modal-backdrop').style.display !== 'none';
-  if (film) {
+  if (isDiary && film) {
+    setWatchDiaryOpen(true);
+    setWatchDiaryTab(diaryTab);
+    openMovieModalByTitle(film.title, film.year, { pushUrl: false, fromDiary: true });
+  } else if (isDiary) {
+    setWatchDiaryOpen(true);
+    if (modalOpen) {
+      document.getElementById('movie-modal-backdrop').style.display = 'none';
+      document.body.style.overflow = '';
+      modalAnticipatedMode = false;
+      modalFromDiary = false;
+      const notFoundBar = document.getElementById('mm-not-found-bar');
+      if (notFoundBar) notFoundBar.hidden = true;
+    }
+  } else if (film) {
     openMovieModalByTitle(film.title, film.year, { pushUrl: false });
   } else if (modalOpen) {
     // Back-navigated away from a modal URL — close without touching history
     document.getElementById('movie-modal-backdrop').style.display = 'none';
     document.body.style.overflow = '';
     modalAnticipatedMode = false;
+    modalFromDiary = false;
     const notFoundBar = document.getElementById('mm-not-found-bar');
     if (notFoundBar) notFoundBar.hidden = true;
   }
@@ -3631,7 +3664,7 @@ window.addEventListener('popstate', () => {
   loadMovies();
 
   // Restore view + sort from URL if present
-  const { view: urlView, sort: urlSort, film: urlFilm } = readViewUrl();
+  const { view: urlView, sort: urlSort, film: urlFilm, isDiary: urlIsDiary, diaryTab: urlDiaryTab } = readViewUrl();
   if (urlView && VIEWS.includes(urlView)) {
     if (urlSort) setSortMode(urlView, urlSort);
     gridView = urlView;
@@ -3657,8 +3690,12 @@ window.addEventListener('popstate', () => {
     renderSessionJournal();
   }
 
+  if (urlIsDiary) {
+    setWatchDiaryOpen(true);
+    setWatchDiaryTab(urlDiaryTab || 'log');
+  }
   if (urlFilm) {
-    requestAnimationFrame(() => openMovieModalByTitle(urlFilm.title, urlFilm.year, { pushUrl: false }));
+    requestAnimationFrame(() => openMovieModalByTitle(urlFilm.title, urlFilm.year, { pushUrl: false, fromDiary: urlIsDiary }));
   }
 })();
 
@@ -3813,6 +3850,7 @@ let modalCurrentKey = null;
 let modalList  = [];
 let modalIndex = 0;
 let modalAnticipatedMode = false;
+let modalFromDiary = false;
 
 function openMovieModal(movie, list = null, opts = {}) {
   if (list) {
@@ -3821,6 +3859,7 @@ function openMovieModal(movie, list = null, opts = {}) {
     if (modalIndex === -1) modalIndex = 0;
   }
   if ('anticipatedMode' in opts) modalAnticipatedMode = opts.anticipatedMode;
+  modalFromDiary = !!opts.fromDiary;
   const counter = document.getElementById('mm-nav-counter');
   if (counter) counter.textContent = modalList.length > 1 ? `${modalIndex + 1} / ${modalList.length}` : '';
   document.getElementById('mm-nav-prev').style.visibility = modalList.length > 1 ? '' : 'hidden';
@@ -3969,7 +4008,7 @@ function openMovieModal(movie, list = null, opts = {}) {
   }
 
   if (modalDetailsCache.has(cacheKey)) {
-    renderModalDetails(body, movie, modalDetailsCache.get(cacheKey), getActiveSkelTab(), modalAnticipatedMode);
+    renderModalDetails(body, movie, modalDetailsCache.get(cacheKey), getActiveSkelTab(), modalAnticipatedMode, modalFromDiary);
     return;
   }
 
@@ -3977,12 +4016,19 @@ function openMovieModal(movie, list = null, opts = {}) {
   if (movie.year) detailsParams.set('year', movie.year);
   if (movie.tmdb_id) detailsParams.set('tmdb_id', movie.tmdb_id);
   fetch(`/api/movie-details?${detailsParams}`)
-    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
     .then(data => {
       modalDetailsCache.set(cacheKey, data);
-      if (modalCurrentKey === cacheKey) renderModalDetails(body, movie, data, getActiveSkelTab(), modalAnticipatedMode);
+      if (modalCurrentKey === cacheKey) renderModalDetails(body, movie, data, getActiveSkelTab(), modalAnticipatedMode, modalFromDiary);
     })
-    .catch(() => {});
+    .catch(err => {
+      console.error('[movie-details]', err);
+      if (modalCurrentKey !== cacheKey) return;
+      const skelContent = body.querySelector('#mm-skel-content');
+      if (skelContent) {
+        skelContent.innerHTML = `<p style="color:#888;padding:2rem 1.5rem;text-align:center;font-family:Inter,sans-serif;font-size:.9rem;">Could not load film details.<br><span style="font-size:.8rem;opacity:.6">${movie.title}</span></p>`;
+      }
+    });
 }
 
 function mmNormalizeTitle(t) {
@@ -4010,14 +4056,14 @@ function mmGetActiveSession(title) {
   return data;
 }
 
-function renderModalDetails(body, movie, data, initialTab = 'details', anticipatedMode = false) {
+function renderModalDetails(body, movie, data, initialTab = 'details', anticipatedMode = false, fromDiary = false) {
   // Backfill director into storage — always prefer fresh API data over stale stored value
   if (data.director && data.director !== movie.director) {
     const listKeys = ['movies', 'watchlist', 'maybe', 'meh', 'banned'];
     const loaders  = { movies: loadMovies, watchlist: loadWatchlist, maybe: loadMaybe, meh: loadMeh, banned: loadBanned };
     const savers   = { movies: saveMovies, watchlist: saveWatchlist, maybe: saveMaybe, meh: saveMeh, banned: saveBanned };
     listKeys.forEach(key => {
-      const arr = loaders[key]();
+      const arr = loaders[key]() || [];
       const entry = arr.find(x => x.title === movie.title);
       if (entry && !entry.director) {
         entry.director = data.director;
@@ -4030,6 +4076,7 @@ function renderModalDetails(body, movie, data, initialTab = 'details', anticipat
   ModalComponent.renderModal(body, movie, data, {
     initialTab,
     anticipatedMode,
+    hideWatchBtn: fromDiary,
     onAnticipate: (m) => {
       const current = loadAnticipated();
       if (!current.some(a => a.title.toLowerCase() === m.title.toLowerCase())) {
@@ -4119,9 +4166,11 @@ function closeMovieModal() {
   document.getElementById('movie-modal-backdrop').style.display = 'none';
   document.body.style.overflow = '';
   modalAnticipatedMode = false;
+  const wasDiary = modalFromDiary;
+  modalFromDiary = false;
   const notFoundBar = document.getElementById('mm-not-found-bar');
   if (notFoundBar) notFoundBar.hidden = true;
-  stripModalUrl(gridView);
+  if (wasDiary) stripDiaryModalUrl(); else stripModalUrl(gridView);
 }
 
 function openMovieModalByTitle(title, year, opts = {}) {
@@ -4146,7 +4195,7 @@ function openMovieModalByTitle(title, year, opts = {}) {
     openMovieModal(found, null, opts);
   } else {
     // Ghost modal: film not in any list
-    const ghost = { title, year: year || null, poster: null };
+    const ghost = { title, year: year || null, poster: opts.poster || null, tmdb_id: opts.tmdbId || null };
     openMovieModal(ghost, null, opts);
     // Show the not-found bar with add buttons
     const notFoundBar = document.getElementById('mm-not-found-bar');
@@ -4633,6 +4682,7 @@ function nwwActivate(movie, sourceView) {
   const data = {
     title: movie.title, year: movie.year, director: movie.director,
     poster: movie.poster, runtime: runtimeMin,
+    tmdb_id: movie.tmdb_id || null,
     sourceView: sourceView || 'search',
     startedAt: Date.now(), pausedAt: null, accumulatedMs: 0
   };
@@ -5282,6 +5332,16 @@ diary.form?.addEventListener('submit', (e) => {
     diary.timestampInput.value = status === 'timestamp' ? formatDiaryTimestamp(timestampMs) : '';
     setDiaryTimestampFieldVisibility();
     return;
+  }
+
+  // Editing an existing entry — update in-place rather than creating a duplicate
+  if (diary.editingEntryId) {
+    const existing = loadWatchLog().find(e => e.id === diary.editingEntryId);
+    if (existing) {
+      upsertWatchLogEntry({ ...existing, watchedAt, status, timestampMs: status === 'timestamp' ? timestampMs : null, note, rewatch });
+      resetWatchDiaryForm();
+      return;
+    }
   }
 
   const savedMovie = selected?.media_type === 'tv'

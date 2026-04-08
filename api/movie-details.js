@@ -13,7 +13,19 @@ module.exports = async function handler(req, res) {
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { title, year, tmdb_id } = req.query;
+  try {
+    return await movieDetailsHandler(req, res);
+  } catch (e) {
+    console.error('[movie-details] unhandled error:', e);
+    return res.status(500).json({ error: 'server_error', message: e.message });
+  }
+};
+
+async function movieDetailsHandler(req, res) {
+
+  const { year, tmdb_id } = req.query;
+  // Strip surrounding quotation marks that some film titles include (e.g. "Wuthering Heights")
+  const title = (req.query.title || '').replace(/^["']+|["']+$/g, '');
   if (!title && !tmdb_id) return res.status(400).end();
 
   const headers = { Authorization: `Bearer ${process.env.TMDB_TOKEN}` };
@@ -139,7 +151,7 @@ module.exports = async function handler(req, res) {
     tagline:      details.tagline  || null,
     runtime:      details.runtime  || null,
     genres:       (details.genres || []).map(g => g.name),
-    poster:       search.results[0].poster_path ? `${TMDB_IMG}w500${search.results[0].poster_path}` : null,
+    poster:       details.poster_path ? `${TMDB_IMG}w500${details.poster_path}` : null,
     imdb_id:      imdbId || null,
     imdb_rating:   imdbRating,
     rt_score:      rtScore,

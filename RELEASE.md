@@ -2,6 +2,25 @@
 
 ---
 
+## Latest — 2026-04-08
+
+### Watch Log — Film Modal
+- Clicking a film in the Watch Log now opens its full film modal with poster, cast, ratings, and details
+- Posters are pulled from the watch log entry so they appear immediately, even for films no longer in any list
+- Watch Tonight button is hidden when the modal is opened from the diary — it doesn't apply in that context
+- Notes and edits made via the main form now save correctly to the existing entry instead of creating a duplicate
+- URL updates to `#diary?film=…&year=…&tab=…` when the modal opens, so back-navigation and direct links work — the tab parameter is omitted when on the default Watch Log tab
+
+### Bug Fixes
+- Film details no longer fail to load when a TMDB ID is provided directly — a scoped variable reference crash has been fixed
+- Title search now strips surrounding quotation marks before querying TMDB (e.g. `"Wuthering Heights"` searches as `Wuthering Heights`)
+- Future watch log entries created via Now Watching will include the TMDB ID, making their detail lookups faster and more reliable
+- Cast photo circles no longer clip at the top or left edge of the scroll container
+- Close (✕) button now sits below the "Not in your collection" bar instead of overlapping it
+- Watch log entry edits via the main form now update the original entry in-place rather than creating a duplicate
+
+---
+
 ## Latest — 2026-04-07
 
 ### Server-Side AI Gate

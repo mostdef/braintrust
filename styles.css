@@ -2840,7 +2840,7 @@ main {
   gap: 14px;
   overflow-x: auto;
   scrollbar-width: none;
-  padding-bottom: 4px;
+  padding: 3px 0 4px 3px;
 }
 .mm-cast::-webkit-scrollbar { display: none; }
 
